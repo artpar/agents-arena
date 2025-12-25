@@ -184,11 +184,19 @@
             background: var(--bg-secondary);
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .sidebar-section {
             padding: 1rem;
             border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .sidebar-section.agents-section {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
         }
 
         .sidebar-section h2 {
@@ -483,7 +491,7 @@
                 </div>
             </div>
 
-            <div class="sidebar-section" id="agents-panel">
+            <div class="sidebar-section agents-section" id="agents-panel">
                 <h2>Agents ({{ agents|length }})</h2>
                 <div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s">
                     <ul class="agent-list">
