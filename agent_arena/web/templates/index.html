@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Arena</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --accent: #e94560;
+            --success: #4ecca3;
+            --border: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        button {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent);
+        }
+
+        button.active {
+            background: var(--success);
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .message {
+            margin-bottom: 0.5rem;
+            line-height: 1.5;
+        }
+
+        .message .time {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .message .sender {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .message .sender.human {
+            color: var(--success);
+        }
+
+        .message .sender.system {
+            color: #ffd700;
+        }
+
+        .message .content {
+            color: var(--text-primary);
+        }
+
+        .message.system {
+            color: #ffd700;
+            font-style: italic;
+        }
+
+        .message.join {
+            color: var(--success);
+        }
+
+        .message.leave {
+            color: var(--accent);
+        }
+
+        .typing-indicator {
+            padding: 0.5rem 1rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 0.9rem;
+            min-height: 1.5rem;
+        }
+
+        .typing-indicator .typing-dot {
+            display: inline-block;
+            animation: typingBounce 1.4s infinite ease-in-out;
+        }
+
+        .typing-indicator .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingBounce {
+            0%, 80%, 100% { opacity: 0.3; }
+            40% { opacity: 1; }
+        }
+
+        .input-area {
+            padding: 1rem;
+            border-top: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .input-area form {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .input-area input[type="text"] {
+            flex: 1;
+            padding: 0.75rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+        }
+
+        .input-area input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .sidebar {
+            width: 250px;
+            background: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-section {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-section h2 {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .agent-list {
+            list-style: none;
+        }
+
+        .agent-list li {
+            padding: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 4px;
+        }
+
+        .agent-list li:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .agent-name {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+        }
+
+        .status-dot.idle {
+            background: var(--success);
+        }
+
+        .status-dot.thinking {
+            background: #ffd700;
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.speaking {
+            background: var(--accent);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-info {
+            font-size: 0.9rem;
+        }
+
+        .status-info p {
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status-info .label {
+            color: var(--text-secondary);
+        }
+
+        .add-agent-form {
+            margin-top: 1rem;
+        }
+
+        .add-agent-form input {
+            width: 100%;
+            padding: 0.5rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            margin-bottom: 0.5rem;
+        }
+
+        .add-agent-form button {
+            width: 100%;
+        }
+
+        .agent-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .step-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--success);
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.7rem;
+            border-radius: 3px;
+        }
+
+        .step-btn:hover {
+            background: var(--success);
+            color: var(--bg-primary);
+        }
+
+        .step-btn.htmx-request {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        .remove-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.25rem;
+            font-size: 0.8rem;
+        }
+
+        .remove-btn:hover {
+            color: var(--accent);
+        }
+
+        .topic-bar {
+            background: var(--bg-tertiary);
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .topic-display {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .topic-display:hover {
+            opacity: 0.8;
+        }
+
+        .channel-name {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .topic-text {
+            color: var(--text-primary);
+        }
+
+        .topic-placeholder {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .topic-edit {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .topic-edit input {
+            flex: 1;
+            padding: 0.4rem 0.75rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+
+        .topic-edit input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .topic-edit button {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .danger-btn {
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+
+        .danger-btn:hover {
+            background: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .room-list {
+            list-style: none;
+        }
+
+        .room-list li {
+            padding: 0.4rem 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .room-list li:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .room-list li.active {
+            background: var(--bg-tertiary);
+            border-left: 2px solid var(--accent);
+        }
+
+        .room-list .room-name {
+            color: var(--accent);
+        }
+
+        .room-list .room-count {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-left: auto;
+        }
+
+        .add-room-form input {
+            width: 100%;
+            padding: 0.5rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            margin-bottom: 0.5rem;
+        }
+
+        .add-room-form button {
+            width: 100%;
+        }
+    </style>
+</head>
+<body hx-ext="ws" ws-connect="/ws">
+    <header>
+        <h1>Agent Arena</h1>
+        <a href="/personas" style="color: var(--text-secondary); text-decoration: none; margin-right: 1rem;">Manage Personas</a>
+        <div class="controls" id="controls">
+            {% include 'partials/controls.html' %}
+        </div>
+    </header>
+
+    <main>
+        <div class="chat-container">
+            <div id="topic-container" hx-get="/topic-panel" hx-trigger="load">
+                <!-- Topic bar loaded via HTMX -->
+            </div>
+            <div class="messages" id="messages" hx-get="/messages" hx-trigger="load">
+                <!-- Messages loaded via HTMX -->
+            </div>
+
+            <div class="typing-indicator" id="typing-indicator"></div>
+
+            <div class="input-area">
+                <form hx-post="/send" hx-swap="none" hx-on::after-request="this.reset()">
+                    <input type="hidden" name="sender" value="Human">
+                    <input type="text" name="content" placeholder="Type a message..." autocomplete="off" autofocus>
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-section" id="status-panel" hx-get="/status-panel" hx-trigger="every 5s">
+                <h2>Status</h2>
+                <div class="status-info">
+                    <p><span class="label">Running:</span> <span>{{ status.running }}</span></p>
+                    <p><span class="label">Mode:</span> <span>{{ status.mode }}</span></p>
+                    <p><span class="label">Round:</span> <span>{{ status.current_round }}</span></p>
+                </div>
+                <button onclick="clearMessages()" style="width: 100%; margin-top: 0.5rem;" class="danger-btn">Clear Messages</button>
+            </div>
+
+            <div class="sidebar-section" id="rooms-panel">
+                <h2>Rooms</h2>
+                <div id="rooms-list"></div>
+                <div class="add-room-form" style="margin-top: 0.75rem;">
+                    <form onsubmit="goToRoom(event)">
+                        <input type="text" id="new-room-name" placeholder="Room name (e.g. philosophy)">
+                        <button type="submit">Go to Room</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="sidebar-section" id="agents-panel">
+                <h2>Agents ({{ agents|length }})</h2>
+                <div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s">
+                    <ul class="agent-list">
+                        {% for agent in agents %}
+                        <li>
+                            <span class="agent-name">
+                                <span class="status-dot {{ agent.status.value }}"></span>
+                                {{ agent.name }}
+                            </span>
+                            <span class="agent-actions">
+                                <button class="step-btn"
+                                        hx-post="/agents/{{ agent.id }}/step"
+                                        hx-swap="none">▶</button>
+                                <button class="remove-btn"
+                                        hx-delete="/agents/{{ agent.id }}"
+                                        hx-confirm="Remove {{ agent.name }}?"
+                                        hx-target="#agents-list"
+                                        hx-swap="outerHTML">×</button>
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="add-agent-form">
+                    <form hx-post="/agents/add" hx-target="#agents-list" hx-swap="outerHTML">
+                        <input type="text" name="config_path" placeholder="Agent config (e.g. philosopher)">
+                        <button type="submit">+ Add Agent</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Auto-scroll messages
+        const messagesDiv = document.getElementById('messages');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const typingAgents = new Set();
+
+        function updateTypingIndicator() {
+            if (typingAgents.size === 0) {
+                typingIndicator.innerHTML = '';
+            } else {
+                const names = Array.from(typingAgents);
+                const text = names.length === 1
+                    ? `${names[0]} is thinking`
+                    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are thinking`;
+                typingIndicator.innerHTML = `${text}<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span>`;
+            }
+        }
+
+        // Handle WebSocket messages (new chat messages and typing indicators)
+        document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
+            const message = evt.detail.message;
+
+            // Check if it's a JSON typing indicator
+            try {
+                const data = JSON.parse(message);
+                if (data.type === 'typing') {
+                    if (data.thinking) {
+                        typingAgents.add(data.agent_name);
+                    } else {
+                        typingAgents.delete(data.agent_name);
+                    }
+                    updateTypingIndicator();
+                    return;
+                }
+            } catch (e) {
+                // Not JSON, it's HTML content
+            }
+
+            // Append new message HTML
+            messagesDiv.insertAdjacentHTML('beforeend', message);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        // Scroll to bottom on load
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.target.id === 'messages') {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        });
+
+        function updateMode(mode) {
+            // Mode will be used on next start
+            console.log('Mode set to:', mode);
+        }
+
+        // Topic editing
+        function editTopic() {
+            const bar = document.getElementById('topic-bar');
+            if (!bar) return;
+            bar.querySelector('.topic-display').style.display = 'none';
+            bar.querySelector('.topic-edit').style.display = 'flex';
+            bar.querySelector('#topic-input').focus();
+        }
+
+        function cancelTopicEdit() {
+            const bar = document.getElementById('topic-bar');
+            if (!bar) return;
+            bar.querySelector('.topic-display').style.display = 'flex';
+            bar.querySelector('.topic-edit').style.display = 'none';
+        }
+
+        async function saveTopic() {
+            const input = document.getElementById('topic-input');
+            const topic = input.value.trim();
+
+            try {
+                const response = await fetch('/api/topic', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic: topic })
+                });
+
+                if (response.ok) {
+                    // Reload the topic panel
+                    htmx.ajax('GET', '/topic-panel', '#topic-container');
+                }
+            } catch (error) {
+                console.error('Failed to save topic:', error);
+            }
+        }
+
+        // Handle Enter key in topic input
+        document.addEventListener('keypress', function(e) {
+            if (e.target.id === 'topic-input' && e.key === 'Enter') {
+                e.preventDefault();
+                saveTopic();
+            }
+        });
+
+        // Handle Escape key to cancel edit
+        document.addEventListener('keydown', function(e) {
+            if (e.target.id === 'topic-input' && e.key === 'Escape') {
+                cancelTopicEdit();
+            }
+        });
+
+        // === Room Management ===
+
+        async function loadRooms() {
+            try {
+                const response = await fetch('/api/rooms');
+                const data = await response.json();
+                const roomsList = document.getElementById('rooms-list');
+
+                if (data.rooms.length === 0) {
+                    roomsList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.85rem;">No rooms yet</p>';
+                    return;
+                }
+
+                roomsList.innerHTML = '<ul class="room-list">' +
+                    data.rooms.map(room => `
+                        <li class="${room.name === data.current ? 'active' : ''}" onclick="goToRoomDirect('${room.name}')">
+                            <span class="room-name">#${room.name}</span>
+                            <span class="room-count">${room.message_count} msgs</span>
+                        </li>
+                    `).join('') +
+                    '</ul>';
+            } catch (error) {
+                console.error('Failed to load rooms:', error);
+            }
+        }
+
+        function goToRoom(event) {
+            event.preventDefault();
+            const input = document.getElementById('new-room-name');
+            const roomName = input.value.trim().toLowerCase().replace(/\s+/g, '-');
+            if (roomName) {
+                window.location.href = '/r/' + roomName;
+            }
+        }
+
+        function goToRoomDirect(roomName) {
+            window.location.href = '/r/' + roomName;
+        }
+
+        async function clearMessages() {
+            if (!confirm('Clear all messages in this room?')) return;
+
+            try {
+                const response = await fetch('/api/messages', { method: 'DELETE' });
+                if (response.ok) {
+                    document.getElementById('messages').innerHTML = '';
+                    loadRooms();  // Refresh room message counts
+                }
+            } catch (error) {
+                console.error('Failed to clear messages:', error);
+            }
+        }
+
+        // Load rooms on page load
+        loadRooms();
+
+        // Refresh rooms list periodically
+        setInterval(loadRooms, 10000);
+    </script>
+</body>
+</html>

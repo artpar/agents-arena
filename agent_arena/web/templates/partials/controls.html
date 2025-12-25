@@ -1,0 +1,10 @@
+{% if status.running %}
+<button hx-post="/stop" hx-target="#controls" hx-swap="innerHTML" class="active">⏹ Stop</button>
+{% else %}
+<button hx-post="/start" hx-target="#controls" hx-swap="innerHTML">▶ Start</button>
+{% endif %}
+<select id="mode-select" onchange="updateMode(this.value)">
+    <option value="hybrid" {% if status.mode == 'hybrid' %}selected{% endif %}>Hybrid</option>
+    <option value="turn_based" {% if status.mode == 'turn_based' %}selected{% endif %}>Turn-based</option>
+    <option value="async" {% if status.mode == 'async' %}selected{% endif %}>Async</option>
+</select>

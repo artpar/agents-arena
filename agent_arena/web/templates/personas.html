@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persona Manager - Agent Arena</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --accent: #e94560;
+            --success: #4ecca3;
+            --border: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        header h1 {
+            color: var(--accent);
+        }
+
+        header a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        header a:hover {
+            color: var(--accent);
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .panel h2 {
+            color: var(--accent);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .persona-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .persona-card {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+        }
+
+        .persona-card:hover {
+            border-color: var(--accent);
+        }
+
+        .persona-card.selected {
+            border-color: var(--success);
+        }
+
+        .persona-card h3 {
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .persona-card p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .persona-card .traits {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .trait-tag {
+            background: var(--bg-secondary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .slider-group input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            border: none;
+        }
+
+        .slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .slider-group .value {
+            width: 40px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .traits-editor {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+
+        .trait-input {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .trait-input label {
+            flex: 1;
+            font-size: 0.85rem;
+        }
+
+        .trait-input input {
+            width: 60px;
+        }
+
+        .interests-input {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            min-height: 40px;
+        }
+
+        .interest-tag {
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .interest-tag button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0;
+            font-size: 0.8rem;
+        }
+
+        .interest-tag button:hover {
+            color: var(--accent);
+        }
+
+        .add-interest {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .add-interest input {
+            flex: 1;
+        }
+
+        button {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent);
+        }
+
+        button.primary {
+            background: var(--accent);
+        }
+
+        button.success {
+            background: var(--success);
+            color: var(--bg-primary);
+        }
+
+        button.danger {
+            background: transparent;
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        button.danger:hover {
+            background: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .status-message {
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .status-message.success {
+            background: rgba(78, 204, 163, 0.2);
+            color: var(--success);
+        }
+
+        .status-message.error {
+            background: rgba(233, 69, 96, 0.2);
+            color: var(--accent);
+        }
+
+        .active-badge {
+            background: var(--success);
+            color: var(--bg-primary);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            margin-left: 0.5rem;
+        }
+
+        .persona-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .checkbox-container input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+
+        .quick-delete {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+        }
+
+        .persona-card:hover .quick-delete {
+            opacity: 1;
+        }
+
+        .quick-delete:hover {
+            color: var(--accent);
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .small-btn {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.8rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .small-btn:hover {
+            background: var(--bg-primary);
+        }
+
+        .small-btn.danger {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .small-btn.danger:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .persona-card.selected {
+            border-color: var(--accent);
+            background: rgba(233, 69, 96, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Persona Manager</h1>
+        <a href="/">Back to Arena</a>
+    </header>
+
+    <div class="container">
+        <div class="panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2>Existing Personas ({{ personas|length }})</h2>
+                <div class="bulk-actions" style="display: flex; gap: 0.5rem;">
+                    <button onclick="selectAllPersonas()" class="small-btn">Select All</button>
+                    <button onclick="deselectAllPersonas()" class="small-btn">Deselect</button>
+                    <button onclick="deleteSelected()" class="small-btn danger">Delete Selected</button>
+                </div>
+            </div>
+            <div class="persona-list" id="persona-list">
+                {% for persona in personas %}
+                <div class="persona-card" data-filename="{{ persona._filename }}">
+                    <div class="persona-header">
+                        <label class="checkbox-container" onclick="event.stopPropagation()">
+                            <input type="checkbox" class="persona-checkbox" value="{{ persona._filename }}">
+                            <span class="checkmark"></span>
+                        </label>
+                        <h3 onclick="loadPersona(event, '{{ persona._filename }}')" style="cursor: pointer; flex: 1;">
+                            {{ persona.name }}
+                            {% if persona._filename in active_agents|map(attribute='id')|list %}
+                            <span class="active-badge">ACTIVE</span>
+                            {% endif %}
+                        </h3>
+                        <button class="quick-delete" onclick="quickDelete('{{ persona._filename }}', '{{ persona.name }}')" title="Delete">×</button>
+                    </div>
+                    <p onclick="loadPersona(event, '{{ persona._filename }}')" style="cursor: pointer;">{{ persona.description[:100] }}{% if persona.description|length > 100 %}...{% endif %}</p>
+                    <div class="traits">
+                        {% for trait, value in persona.personality_traits.items() %}
+                        <span class="trait-tag">{{ trait }}: {{ value }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="panel">
+            <!-- Team Generation Section -->
+            <div class="generate-section" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                <h2 style="color: var(--accent); margin-bottom: 0.75rem;">Generate Team</h2>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                    Generate multiple personas at once. Describe the team and how many members.
+                </p>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                    <textarea id="team-description" placeholder="e.g., A software startup team, A family-owned farm business, Office of the Department of Agriculture..." style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit; min-height: 60px; resize: vertical;"></textarea>
+                </div>
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <input type="number" id="team-count" value="5" min="2" max="15" style="width: 80px; padding: 0.5rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                    <span style="color: var(--text-secondary); align-self: center;">team members (max 15)</span>
+                </div>
+                <button type="button" onclick="generateTeam()" class="primary" id="team-btn" style="width: 100%;">
+                    Generate Team
+                </button>
+                <div id="team-status" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>
+            </div>
+
+            <!-- Single Persona Generation Section -->
+            <div class="generate-section" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                <h2 style="color: var(--success); margin-bottom: 0.75rem;">Generate Single Persona</h2>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                    Describe a single persona to generate.
+                </p>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                    <textarea id="generate-prompt" placeholder="e.g., A cynical detective who speaks in noir style..." style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit; min-height: 60px; resize: vertical;"></textarea>
+                </div>
+                <button type="button" onclick="generatePersona()" class="success" id="generate-btn" style="width: 100%;">
+                    Generate Persona
+                </button>
+                <div id="generate-status" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>
+            </div>
+
+            <h2 id="form-title">Create New Persona</h2>
+            <div id="status-message"></div>
+
+            <form id="persona-form" onsubmit="savePersona(event)">
+                <input type="hidden" id="editing-filename" value="">
+
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required placeholder="e.g., Einstein">
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" placeholder="A brief description of this persona..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="speaking_style">Speaking Style</label>
+                    <input type="text" id="speaking_style" name="speaking_style" placeholder="e.g., Thoughtful and precise, uses analogies">
+                </div>
+
+                <div class="form-group">
+                    <label for="system_prompt">Custom System Prompt (optional)</label>
+                    <textarea id="system_prompt" name="system_prompt" placeholder="Leave blank to auto-generate from personality traits..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Personality Traits</label>
+                    <div class="traits-editor">
+                        <div class="trait-input">
+                            <label>Curiosity</label>
+                            <input type="number" id="trait_curiosity" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="trait-input">
+                            <label>Assertiveness</label>
+                            <input type="number" id="trait_assertiveness" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="trait-input">
+                            <label>Humor</label>
+                            <input type="number" id="trait_humor" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="trait-input">
+                            <label>Empathy</label>
+                            <input type="number" id="trait_empathy" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="trait-input">
+                            <label>Skepticism</label>
+                            <input type="number" id="trait_skepticism" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                        <div class="trait-input">
+                            <label>Creativity</label>
+                            <input type="number" id="trait_creativity" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Interests</label>
+                    <div class="interests-input" id="interests-container"></div>
+                    <div class="add-interest">
+                        <input type="text" id="new-interest" placeholder="Add interest...">
+                        <button type="button" onclick="addInterest()">Add</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Response Tendency (0=quiet, 1=talkative)</label>
+                    <div class="slider-group">
+                        <input type="range" id="response_tendency" min="0" max="1" step="0.1" value="0.5" oninput="updateSliderValue(this)">
+                        <span class="value" id="response_tendency_value">0.5</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Temperature (creativity)</label>
+                    <div class="slider-group">
+                        <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7" oninput="updateSliderValue(this)">
+                        <span class="value" id="temperature_value">0.7</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="model">Model</label>
+                    <select id="model" name="model">
+                        <option value="haiku">Haiku (fast, cheap)</option>
+                        <option value="sonnet">Sonnet (balanced)</option>
+                        <option value="opus">Opus (powerful)</option>
+                    </select>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="primary" id="save-btn">Create Persona</button>
+                    <button type="button" onclick="resetForm()">Reset</button>
+                    <button type="button" class="danger" id="delete-btn" style="display:none" onclick="deletePersona()">Delete</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let interests = [];
+
+        function updateSliderValue(input) {
+            document.getElementById(input.id + '_value').textContent = input.value;
+        }
+
+        function addInterest() {
+            const input = document.getElementById('new-interest');
+            const value = input.value.trim();
+            if (value && !interests.includes(value)) {
+                interests.push(value);
+                renderInterests();
+                input.value = '';
+            }
+        }
+
+        function removeInterest(interest) {
+            interests = interests.filter(i => i !== interest);
+            renderInterests();
+        }
+
+        function renderInterests() {
+            const container = document.getElementById('interests-container');
+            container.innerHTML = interests.map(i => `
+                <span class="interest-tag">
+                    ${i}
+                    <button type="button" onclick="removeInterest('${i}')">&times;</button>
+                </span>
+            `).join('');
+        }
+
+        function showStatus(message, isError = false) {
+            const el = document.getElementById('status-message');
+            el.className = 'status-message ' + (isError ? 'error' : 'success');
+            el.textContent = message;
+            setTimeout(() => { el.textContent = ''; el.className = ''; }, 3000);
+        }
+
+        async function loadPersona(evt, filename) {
+            try {
+                const response = await fetch(`/api/personas/${filename}`);
+                const persona = await response.json();
+
+                document.getElementById('editing-filename').value = filename;
+                document.getElementById('name').value = persona.name || '';
+                document.getElementById('description').value = persona.description || '';
+                document.getElementById('speaking_style').value = persona.speaking_style || '';
+                document.getElementById('system_prompt').value = persona.system_prompt || '';
+
+                // Load traits
+                const traits = persona.personality_traits || {};
+                document.getElementById('trait_curiosity').value = traits.curiosity || 0.5;
+                document.getElementById('trait_assertiveness').value = traits.assertiveness || 0.5;
+                document.getElementById('trait_humor').value = traits.humor || 0.5;
+                document.getElementById('trait_empathy').value = traits.empathy || 0.5;
+                document.getElementById('trait_skepticism').value = traits.skepticism || 0.5;
+                document.getElementById('trait_creativity').value = traits.creativity || 0.5;
+
+                // Load interests
+                interests = persona.interests || [];
+                renderInterests();
+
+                // Load sliders
+                document.getElementById('response_tendency').value = persona.response_tendency || 0.5;
+                document.getElementById('response_tendency_value').textContent = persona.response_tendency || 0.5;
+                document.getElementById('temperature').value = persona.temperature || 0.7;
+                document.getElementById('temperature_value').textContent = persona.temperature || 0.7;
+
+                document.getElementById('model').value = persona.model || 'haiku';
+
+                // Update UI
+                document.getElementById('form-title').textContent = 'Edit Persona: ' + persona.name;
+                document.getElementById('save-btn').textContent = 'Save Changes';
+                document.getElementById('delete-btn').style.display = 'inline-block';
+
+                // Highlight selected card
+                document.querySelectorAll('.persona-card').forEach(c => c.classList.remove('selected'));
+                evt.target.closest('.persona-card').classList.add('selected');
+
+            } catch (error) {
+                showStatus('Failed to load persona: ' + error.message, true);
+            }
+        }
+
+        async function savePersona(event) {
+            event.preventDefault();
+
+            const filename = document.getElementById('editing-filename').value;
+            const isEdit = !!filename;
+
+            const data = {
+                name: document.getElementById('name').value,
+                description: document.getElementById('description').value,
+                speaking_style: document.getElementById('speaking_style').value,
+                system_prompt: document.getElementById('system_prompt').value,
+                personality_traits: {
+                    curiosity: parseFloat(document.getElementById('trait_curiosity').value),
+                    assertiveness: parseFloat(document.getElementById('trait_assertiveness').value),
+                    humor: parseFloat(document.getElementById('trait_humor').value),
+                    empathy: parseFloat(document.getElementById('trait_empathy').value),
+                    skepticism: parseFloat(document.getElementById('trait_skepticism').value),
+                    creativity: parseFloat(document.getElementById('trait_creativity').value),
+                },
+                interests: interests,
+                response_tendency: parseFloat(document.getElementById('response_tendency').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                model: document.getElementById('model').value,
+            };
+
+            try {
+                const url = isEdit ? `/api/personas/${filename}` : '/api/personas';
+                const method = isEdit ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to save');
+                }
+
+                // Clear draft from localStorage on successful save
+                localStorage.removeItem('persona_draft');
+
+                showStatus(isEdit ? 'Persona updated!' : 'Persona created!');
+                setTimeout(() => location.reload(), 1000);
+
+            } catch (error) {
+                showStatus('Error: ' + error.message, true);
+            }
+        }
+
+        async function deletePersona() {
+            const filename = document.getElementById('editing-filename').value;
+            if (!filename) return;
+
+            if (!confirm('Delete this persona? This cannot be undone.')) return;
+
+            try {
+                const response = await fetch(`/api/personas/${filename}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to delete');
+
+                showStatus('Persona deleted!');
+                setTimeout(() => location.reload(), 1000);
+
+            } catch (error) {
+                showStatus('Error: ' + error.message, true);
+            }
+        }
+
+        function resetForm() {
+            document.getElementById('persona-form').reset();
+            document.getElementById('editing-filename').value = '';
+            interests = [];
+            renderInterests();
+            document.getElementById('form-title').textContent = 'Create New Persona';
+            document.getElementById('save-btn').textContent = 'Create Persona';
+            document.getElementById('delete-btn').style.display = 'none';
+            document.querySelectorAll('.persona-card').forEach(c => c.classList.remove('selected'));
+        }
+
+        // Handle Enter key in interests input
+        document.getElementById('new-interest').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addInterest();
+            }
+        });
+
+        // === LocalStorage Persistence ===
+        const DRAFT_KEY = 'persona_draft';
+
+        function getFormData() {
+            return {
+                name: document.getElementById('name').value,
+                description: document.getElementById('description').value,
+                speaking_style: document.getElementById('speaking_style').value,
+                system_prompt: document.getElementById('system_prompt').value,
+                personality_traits: {
+                    curiosity: parseFloat(document.getElementById('trait_curiosity').value),
+                    assertiveness: parseFloat(document.getElementById('trait_assertiveness').value),
+                    humor: parseFloat(document.getElementById('trait_humor').value),
+                    empathy: parseFloat(document.getElementById('trait_empathy').value),
+                    skepticism: parseFloat(document.getElementById('trait_skepticism').value),
+                    creativity: parseFloat(document.getElementById('trait_creativity').value),
+                },
+                interests: interests,
+                response_tendency: parseFloat(document.getElementById('response_tendency').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                model: document.getElementById('model').value,
+            };
+        }
+
+        function saveDraft() {
+            const data = getFormData();
+            if (data.name) {  // Only save if there's a name
+                localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                    data: data,
+                    timestamp: Date.now()
+                }));
+            }
+        }
+
+        function clearDraft() {
+            localStorage.removeItem(DRAFT_KEY);
+        }
+
+        function loadDraft() {
+            const saved = localStorage.getItem(DRAFT_KEY);
+            if (!saved) return null;
+            try {
+                const { data, timestamp } = JSON.parse(saved);
+                // Drafts older than 24 hours are discarded
+                if (Date.now() - timestamp > 24 * 60 * 60 * 1000) {
+                    clearDraft();
+                    return null;
+                }
+                return data;
+            } catch {
+                return null;
+            }
+        }
+
+        function populateForm(persona) {
+            document.getElementById('name').value = persona.name || '';
+            document.getElementById('description').value = persona.description || '';
+            document.getElementById('speaking_style').value = persona.speaking_style || '';
+            document.getElementById('system_prompt').value = persona.system_prompt || '';
+
+            const traits = persona.personality_traits || {};
+            document.getElementById('trait_curiosity').value = traits.curiosity || 0.5;
+            document.getElementById('trait_assertiveness').value = traits.assertiveness || 0.5;
+            document.getElementById('trait_humor').value = traits.humor || 0.5;
+            document.getElementById('trait_empathy').value = traits.empathy || 0.5;
+            document.getElementById('trait_skepticism').value = traits.skepticism || 0.5;
+            document.getElementById('trait_creativity').value = traits.creativity || 0.5;
+
+            interests = persona.interests || [];
+            renderInterests();
+
+            const respTendency = persona.response_tendency || 0.5;
+            const temp = persona.temperature || 0.7;
+            document.getElementById('response_tendency').value = respTendency;
+            document.getElementById('response_tendency_value').textContent = respTendency;
+            document.getElementById('temperature').value = temp;
+            document.getElementById('temperature_value').textContent = temp;
+
+            document.getElementById('model').value = persona.model || 'haiku';
+        }
+
+        // Auto-save draft on form changes
+        document.getElementById('persona-form').addEventListener('input', function() {
+            saveDraft();
+        });
+
+        // Check for draft on page load
+        window.addEventListener('load', function() {
+            const draft = loadDraft();
+            if (draft && draft.name) {
+                if (confirm(`Found unsaved draft: "${draft.name}". Restore it?`)) {
+                    populateForm(draft);
+                    showStatus('Draft restored from local storage');
+                } else {
+                    clearDraft();
+                }
+            }
+        });
+
+        // AI Persona Generation with Auto-Save
+        async function generatePersona() {
+            const prompt = document.getElementById('generate-prompt').value.trim();
+            const statusEl = document.getElementById('generate-status');
+            const btn = document.getElementById('generate-btn');
+
+            if (!prompt) {
+                statusEl.innerHTML = '<span style="color: var(--accent);">Please enter a description.</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            statusEl.innerHTML = '<span style="color: var(--text-secondary);">Asking AI to create persona...</span>';
+
+            try {
+                // Step 1: Generate persona via LLM
+                const response = await fetch('/api/personas/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Generation failed');
+                }
+
+                const persona = await response.json();
+                statusEl.innerHTML = '<span style="color: var(--text-secondary);">Saving persona...</span>';
+
+                // Step 2: Auto-save to server
+                const saveResponse = await fetch('/api/personas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(persona)
+                });
+
+                if (!saveResponse.ok) {
+                    // Save failed, populate form for manual save
+                    populateForm(persona);
+                    saveDraft();  // Save to localStorage as backup
+                    statusEl.innerHTML = '<span style="color: var(--accent);">Auto-save failed. Please save manually.</span>';
+                    return;
+                }
+
+                const saveResult = await saveResponse.json();
+                clearDraft();  // Clear any draft since we saved successfully
+
+                statusEl.innerHTML = `<span style="color: var(--success);">Persona "${persona.name}" created and saved!</span>`;
+                document.getElementById('generate-prompt').value = '';
+
+                // Reload page to show new persona in list
+                setTimeout(() => location.reload(), 1000);
+
+            } catch (error) {
+                statusEl.innerHTML = '<span style="color: var(--accent);">Error: ' + error.message + '</span>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Persona';
+            }
+        }
+
+        // === Team Generation ===
+        async function generateTeam() {
+            const description = document.getElementById('team-description').value.trim();
+            const count = parseInt(document.getElementById('team-count').value) || 5;
+            const statusEl = document.getElementById('team-status');
+            const btn = document.getElementById('team-btn');
+
+            if (!description) {
+                statusEl.innerHTML = '<span style="color: var(--accent);">Please enter a team description.</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = `Generating ${count} personas...`;
+            statusEl.innerHTML = '<span style="color: var(--text-secondary);">Creating team (this may take a moment)...</span>';
+
+            try {
+                const response = await fetch('/api/personas/generate-team', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description, count })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Team generation failed');
+                }
+
+                const result = await response.json();
+                const names = result.personas.map(p => p.name).join(', ');
+                statusEl.innerHTML = `<span style="color: var(--success);">Created ${result.count} personas: ${names}</span>`;
+                document.getElementById('team-description').value = '';
+
+                // Reload page to show new personas
+                setTimeout(() => location.reload(), 1500);
+
+            } catch (error) {
+                statusEl.innerHTML = '<span style="color: var(--accent);">Error: ' + error.message + '</span>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Team';
+            }
+        }
+
+        // === Selection Functions ===
+        function selectAllPersonas() {
+            document.querySelectorAll('.persona-checkbox').forEach(cb => {
+                cb.checked = true;
+                cb.closest('.persona-card').classList.add('selected');
+            });
+        }
+
+        function deselectAllPersonas() {
+            document.querySelectorAll('.persona-checkbox').forEach(cb => {
+                cb.checked = false;
+                cb.closest('.persona-card').classList.remove('selected');
+            });
+        }
+
+        // Update card styling when checkbox changes
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('persona-checkbox')) {
+                const card = e.target.closest('.persona-card');
+                if (e.target.checked) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            }
+        });
+
+        // === Delete Functions ===
+        async function quickDelete(filename, name) {
+            event.stopPropagation();
+            if (!confirm(`Delete "${name}"?`)) return;
+
+            try {
+                const response = await fetch(`/api/personas/${filename}`, { method: 'DELETE' });
+                if (response.ok) {
+                    document.querySelector(`[data-filename="${filename}"]`).remove();
+                    showStatus(`Deleted ${name}`);
+                }
+            } catch (error) {
+                showStatus('Delete failed: ' + error.message, true);
+            }
+        }
+
+        async function deleteSelected() {
+            const selected = Array.from(document.querySelectorAll('.persona-checkbox:checked'))
+                .map(cb => cb.value);
+
+            if (selected.length === 0) {
+                alert('No personas selected');
+                return;
+            }
+
+            if (!confirm(`Delete ${selected.length} persona(s)?`)) return;
+
+            try {
+                const response = await fetch('/api/personas/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames: selected })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showStatus(`Deleted ${result.deleted.length} persona(s)`);
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (error) {
+                showStatus('Bulk delete failed: ' + error.message, true);
+            }
+        }
+
+    </script>
+</body>
+</html>
