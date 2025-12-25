@@ -211,28 +211,45 @@ def create_app(world: Optional[ArenaWorld] = None) -> FastAPI:
 
     @app.get("/r/{room_name}", response_class=HTMLResponse)
     async def room_page(request: Request, room_name: str):
-        """Dynamic room page - creates room if it doesn't exist."""
+        """Dynamic room page - creates room if it doesn't exist.
+
+        Query params are passed to description generation:
+        - force=true: Regenerate description even if room exists
+        - Any other params are included in the prompt (e.g., vibe=cozy, theme=startup)
+        """
         # Normalize room name
         room_name = room_name.lower().replace(" ", "-")
 
+        # Get query parameters
+        query_params = dict(request.query_params)
+        force_regenerate = query_params.pop("force", "").lower() == "true"
+
         # Check if room exists
         channel = app.state.world.get_channel(room_name)
+        is_new_room = channel is None
 
-        if not channel:
+        if is_new_room:
             # Create new room
             channel = app.state.world.create_channel(room_name, "")
 
-            # Generate room description via LLM
+        # Generate description if new room or force=true
+        if is_new_room or force_regenerate:
             try:
                 api_key = os.environ.get("ANTHROPIC_API_KEY")
                 if api_key:
+                    # Build prompt with query parameters
+                    params_str = ""
+                    if query_params:
+                        params_list = [f"{k}={v}" for k, v in query_params.items()]
+                        params_str = f"\n\nCustomization parameters: {', '.join(params_list)}"
+
                     client = anthropic.Anthropic(api_key=api_key)
                     response = client.messages.create(
                         model="claude-haiku-4-5-20251001",
                         max_tokens=256,
                         messages=[{
                             "role": "user",
-                            "content": f"Generate a brief, engaging description (2-3 sentences) for a chat room called '{room_name}'. What would people discuss here? Be creative and specific. Just return the description, no quotes or labels."
+                            "content": f"Generate a brief, engaging description (2-3 sentences) for a chat room called '{room_name}'. What would people discuss here? Be creative and specific. Just return the description, no quotes or labels.{params_str}"
                         }]
                     )
                     description = response.content[0].text.strip()
@@ -240,8 +257,10 @@ def create_app(world: Optional[ArenaWorld] = None) -> FastAPI:
                     channel.set_topic(description)
             except Exception as e:
                 logger.error(f"Failed to generate room description: {e}")
-                channel.set_topic(f"Welcome to #{room_name}")
+                if is_new_room:
+                    channel.set_topic(f"Welcome to #{room_name}")
 
+        if is_new_room:
             # Add all agents to this room
             for agent in app.state.world.registry.all():
                 channel.add_member(agent.id)
