@@ -5,6 +5,7 @@ An IRC-like chat environment where multiple AI agents (powered by Claude) intera
 ## Features
 
 - **Multi-Agent Chat**: Multiple AI personas converse in real-time
+- **Concrete Personas**: Agents have specific backgrounds, war stories, and opinions - not generic archetypes
 - **Dynamic Personas**: Add, remove, and generate AI personas on the fly
 - **Team Generation**: Generate entire teams of personas with a single prompt
 - **Multiple Rooms**: Create and switch between different chat rooms
@@ -12,40 +13,47 @@ An IRC-like chat environment where multiple AI agents (powered by Claude) intera
 - **Human Participation**: Join conversations as a human participant
 - **Typing Indicators**: See when agents are thinking
 - **Real-time Updates**: WebSocket-powered live chat
+- **SQLite Persistence**: Messages, rooms, and agents persist across restarts
 
 ## Tech Stack
 
-- **Backend**: Python 3.11+, FastAPI, Anthropic Claude API
-- **Frontend**: HTMX, Jinja2 templates
-- **Database**: SQLite with SQLAlchemy (optional persistence)
+- **Backend**: Node.js, TypeScript, Express
+- **Frontend**: HTMX, Nunjucks templates
+- **Database**: SQLite with better-sqlite3
+- **AI**: Anthropic Claude API (@anthropic-ai/sdk)
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/agent-arena.git
-cd agent-arena
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+git clone https://github.com/artpar/agents-arena.git
+cd agents-arena
 
 # Install dependencies
-pip install -e .
+npm install
 
 # Set your Anthropic API key
-export ANTHROPIC_API_KEY=your_api_key_here
+echo "ANTHROPIC_API_KEY=your_api_key_here" > .env
 ```
 
 ## Usage
 
-### Start the Web Server
+### Start the Server
 
 ```bash
-arena serve --port 8888
+npm start
 ```
 
 Then open http://localhost:8888 in your browser.
+
+### Server Management
+
+```bash
+npm start          # Start server
+npm run stop       # Stop server gracefully
+npm run restart    # Restart server
+npm run status     # Check if server is running
+```
 
 ### Web Interface
 
@@ -57,31 +65,20 @@ Then open http://localhost:8888 in your browser.
 - **Rooms**: Create or switch rooms using the Rooms panel
 - **Step Agents**: Click the play button next to an agent to have them respond
 
-### Persona Management
+### Persona Generation
+
+The system generates **concrete personas** with:
+- Specific experiences ("debugged a 3-day outage at Stripe")
+- Opinions with reasons ("hates GraphQL because I watched 3 teams waste months")
+- Real details (company names, years, actual numbers)
+- Behavioral quirks ("always asks 'who's oncall for this?'")
 
 Access `/personas` to:
 - View all configured personas
 - Create new personas manually
-- Generate personas with AI (describe the persona you want)
+- Generate personas with AI
 - Generate entire teams (e.g., "A startup team building a social app")
 - Bulk delete personas
-
-### CLI Commands
-
-```bash
-# Start simulation
-arena run --scenario debate.yaml --mode hybrid
-
-# Agent management
-arena agents list
-arena agents add philosopher.yaml
-arena agents remove socrates
-
-# Simulation control
-arena sim status
-arena sim pause
-arena sim resume
-```
 
 ## Configuration
 
@@ -90,22 +87,18 @@ arena sim resume
 Create persona files in `configs/agents/`:
 
 ```yaml
-name: Socrates
-description: Ancient Greek philosopher known for the Socratic method
-speaking_style: Asks probing questions, uses analogies
-personality_traits:
-  curiosity: 0.9
-  assertiveness: 0.4
-  humor: 0.3
-  empathy: 0.7
-  skepticism: 0.8
-interests:
-  - ethics
-  - truth
-  - virtue
-  - knowledge
-response_tendency: 0.6  # 0=quiet, 1=talkative
-temperature: 0.7
+name: Marcus
+description: |
+  DevOps consultant who's been inside 30+ companies cleaning up messes.
+  Started as a sysadmin in 2009, went independent in 2017. Once found a
+  forgotten $80k/month GPU cluster running inference on nothing. Watched
+  a company lose $2M because they deployed on Friday and their one senior
+  engineer was on a flight. Thinks Kubernetes is great tech that 90% of
+  companies shouldn't use. Starts every story with "I once saw a company..."
+  and they're always horror stories.
+
+response_tendency: 0.7  # 0=quiet, 1=talkative
+temperature: 0.65
 model: haiku  # haiku, sonnet, or opus
 ```
 
@@ -117,18 +110,30 @@ model: haiku  # haiku, sonnet, or opus
 
 ```
 agent-arena/
-├── pyproject.toml
-├── agent_arena/
-│   ├── core/           # Types, events, messages
-│   ├── agents/         # Agent class, memory, decision engine
-│   ├── arena/          # World manager, scheduler, channels
-│   ├── llm/            # Claude client, rate limiter
-│   ├── api/            # FastAPI REST + WebSocket
-│   ├── cli/            # Click commands
-│   └── web/            # HTMX templates
+├── package.json
+├── tsconfig.json
+├── src/
+│   ├── index.ts              # Entry point
+│   ├── core/
+│   │   ├── types.ts          # Enums, interfaces
+│   │   ├── events.ts         # EventBus (Node EventEmitter)
+│   │   ├── message.ts        # Message class
+│   │   └── database.ts       # SQLite persistence
+│   ├── agents/
+│   │   ├── agent.ts          # Agent + Anthropic SDK
+│   │   └── loader.ts         # YAML config loading
+│   ├── arena/
+│   │   ├── world.ts          # Orchestrator + scheduler
+│   │   ├── channel.ts        # Chat rooms
+│   │   └── registry.ts       # Agent registry
+│   └── api/
+│       └── app.ts            # Express + WebSocket + routes
+├── templates/                # Nunjucks templates
 ├── configs/
-│   └── agents/         # YAML agent definitions
-└── data/               # SQLite DB (gitignored)
+│   └── agents/               # YAML agent definitions
+├── bin/
+│   └── arena.js              # CLI tool
+└── data/                     # SQLite DB (gitignored)
 ```
 
 ## License
