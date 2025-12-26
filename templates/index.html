@@ -25,7 +25,7 @@
         }
 
         body {
-            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             height: 100vh;
@@ -87,47 +87,158 @@
         .messages {
             flex: 1;
             overflow-y: auto;
-            padding: 1rem;
+            padding: 1.5rem 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            background: #0d1117;
         }
 
-        .message {
+        /* Chat message card */
+        .message.chat-message {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            background: #161b22;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            max-width: 100%;
+        }
+
+        .message.chat-message:hover {
+            border-color: #484f58;
+        }
+
+        .message.chat-message.human-message {
+            background: #0d2818;
+            border-color: #238636;
+        }
+
+        /* Avatar */
+        .message-avatar {
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+        }
+
+        .human-message .message-avatar {
+            background: #238636;
+        }
+
+        /* Generate unique avatar colors based on sender name */
+        .message-avatar[data-sender="Ahmed"] { background: #e91e63; }
+        .message-avatar[data-sender="Brian"] { background: #9c27b0; }
+        .message-avatar[data-sender="Carlos"] { background: #673ab7; }
+        .message-avatar[data-sender="David"] { background: #3f51b5; }
+        .message-avatar[data-sender="Elena"] { background: #2196f3; }
+        .message-avatar[data-sender="Jan"] { background: #00bcd4; }
+        .message-avatar[data-sender="Lisa"] { background: #009688; }
+        .message-avatar[data-sender="Marcus"] { background: #4caf50; }
+        .message-avatar[data-sender="Mikhail"] { background: #ff9800; }
+        .message-avatar[data-sender="Mortimer"] { background: #ff5722; }
+        .message-avatar[data-sender="Nate"] { background: #795548; }
+        .message-avatar[data-sender="Priya"] { background: #607d8b; }
+        .message-avatar[data-sender="Richard"] { background: #f44336; }
+        .message-avatar[data-sender="Sophie"] { background: #e040fb; }
+        .message-avatar[data-sender="Yuki"] { background: #00e5ff; }
+        .message-avatar[data-sender="Human"] { background: #238636; }
+
+        /* Message body */
+        .message-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
             margin-bottom: 0.5rem;
-            line-height: 1.5;
         }
 
-        .message .time {
-            color: var(--text-secondary);
+        .message-sender {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--accent);
+        }
+
+        .message-sender.human {
+            color: #3fb950;
+        }
+
+        /* Unique sender name colors */
+        .message-sender[data-sender="Ahmed"] { color: #f472b6; }
+        .message-sender[data-sender="Brian"] { color: #c084fc; }
+        .message-sender[data-sender="Carlos"] { color: #a78bfa; }
+        .message-sender[data-sender="David"] { color: #818cf8; }
+        .message-sender[data-sender="Elena"] { color: #60a5fa; }
+        .message-sender[data-sender="Jan"] { color: #22d3ee; }
+        .message-sender[data-sender="Lisa"] { color: #2dd4bf; }
+        .message-sender[data-sender="Marcus"] { color: #4ade80; }
+        .message-sender[data-sender="Mikhail"] { color: #fbbf24; }
+        .message-sender[data-sender="Mortimer"] { color: #fb923c; }
+        .message-sender[data-sender="Nate"] { color: #a8a29e; }
+        .message-sender[data-sender="Priya"] { color: #94a3b8; }
+        .message-sender[data-sender="Richard"] { color: #f87171; }
+        .message-sender[data-sender="Sophie"] { color: #e879f9; }
+        .message-sender[data-sender="Yuki"] { color: #67e8f9; }
+
+        .message-time {
+            color: #8b949e;
             font-size: 0.8rem;
         }
 
-        .message .sender {
-            color: var(--accent);
+        .message-content {
+            color: #e6edf3;
+            line-height: 1.7;
+            font-size: 0.95rem;
+            word-wrap: break-word;
+        }
+
+        /* System messages */
+        .message.system-message {
+            padding: 0.5rem 1rem;
+            text-align: center;
+        }
+
+        .system-content {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #30363d;
+        }
+
+        .system-icon {
             font-weight: bold;
+            font-size: 0.9rem;
         }
 
-        .message .sender.human {
-            color: var(--success);
+        .message.join-message .system-content {
+            color: #3fb950;
+            border-color: #238636;
         }
 
-        .message .sender.system {
-            color: #ffd700;
+        .message.leave-message .system-content {
+            color: #f85149;
+            border-color: #da3633;
         }
 
-        .message .content {
-            color: var(--text-primary);
-        }
-
-        .message.system {
-            color: #ffd700;
-            font-style: italic;
-        }
-
-        .message.join {
-            color: var(--success);
-        }
-
-        .message.leave {
-            color: var(--accent);
+        .message.system-message:not(.join-message):not(.leave-message) .system-content {
+            color: #d29922;
+            border-color: #9e6a03;
         }
 
         .typing-indicator {

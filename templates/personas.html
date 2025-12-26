@@ -413,15 +413,21 @@
                         </label>
                         <h3 onclick="loadPersona(event, '{{ persona._filename }}')" style="cursor: pointer; flex: 1;">
                             {{ persona.name }}
-                            {% if persona._filename in active_agents|map(attribute='id')|list %}
+                            {% set is_active = false %}
+                            {% for agent in active_agents %}
+                                {% if agent.id == persona._filename %}
+                                    {% set is_active = true %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if is_active %}
                             <span class="active-badge">ACTIVE</span>
                             {% endif %}
                         </h3>
                         <button class="quick-delete" onclick="quickDelete('{{ persona._filename }}', '{{ persona.name }}')" title="Delete">×</button>
                     </div>
-                    <p onclick="loadPersona(event, '{{ persona._filename }}')" style="cursor: pointer;">{{ persona.description[:100] }}{% if persona.description|length > 100 %}...{% endif %}</p>
+                    <p onclick="loadPersona(event, '{{ persona._filename }}')" style="cursor: pointer;">{{ persona.description | truncate(100) if persona.description else '' }}</p>
                     <div class="traits">
-                        {% for trait, value in persona.personality_traits.items() %}
+                        {% for trait, value in persona.personality_traits %}
                         <span class="trait-tag">{{ trait }}: {{ value }}</span>
                         {% endfor %}
                     </div>
