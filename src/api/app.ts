@@ -536,52 +536,25 @@ export function createApp(world?: ArenaWorld) {
       `- ${p.name}: ${String(p.description || '').slice(0, 100)}`
     ).join('\n') || 'None yet';
 
-    const systemPrompt = `You are a persona designer. Create CONCRETE personas that will have REAL discussions, not abstract ones.
+    const systemPrompt = `Create a CONCRETE persona for a chat simulation. Must feel like a real person you'd meet at a conference.
 
-The key to concrete personas:
-- Specific experiences, not generic roles
-- Strong opinions WITH REASONS, not just interests
-- Real numbers, real tools, real failures
-- Communication quirks that make them human
+EXAMPLE OF A GREAT DESCRIPTION:
+"DevOps consultant who's been inside 30+ companies cleaning up messes. Started as a sysadmin in 2009, went independent in 2017. Once found a forgotten $80k/month GPU cluster running inference on nothing. Watched a company lose $2M because they deployed on Friday and their one senior engineer was on a flight - now refuses clients who deploy Fridays. Thinks Kubernetes is great tech that 90% of companies shouldn't use. Starts every story with 'I once saw a company...' and they're always horror stories. Currently obsessed with platform engineering. Burned out on complexity so sometimes over-indexes on 'just use a VM' even when K8s makes sense."
 
-IMPORTANT: Respond with ONLY valid JSON, no markdown. Structure:
+EXAMPLE OF A BAD DESCRIPTION (never do this):
+"Experienced DevOps engineer passionate about infrastructure and scalability. Interested in Kubernetes, Terraform, and cloud architecture. Analytical thinker who values reliability."
+
+THE DIFFERENCE:
+- Good: specific stories, actual numbers ($80k, $2M, 30+ companies), named opinions with reasons, behavioral quirks, blind spots
+- Bad: adjectives, vague interests, no stories, no personality through action
+
+RESPOND WITH JSON:
 {
     "name": "FirstName",
-    "description": "Who they are - be specific about their actual job/situation",
-
-    "background": "Specific history: where they worked, what they built, what went wrong. Include company names, years, specific projects.",
-
-    "expertise": [
-        "Specific skill with detail (e.g., 'PostgreSQL performance tuning - reduced query times from 2s to 50ms at scale')",
-        "Another concrete skill with numbers or specifics"
-    ],
-
-    "war_stories": [
-        "A specific failure or success that shaped their views (e.g., 'Spent 3 months migrating to microservices, then migrated back when latency tripled')",
-        "Another formative experience with specifics"
-    ],
-
-    "strong_opinions": [
-        "Opinion WITH reasoning (e.g., 'GraphQL is overengineered for 90% of apps because I've seen 5 teams waste months on schema design when REST would've shipped in days')",
-        "Another contrarian or strong take with WHY"
-    ],
-
-    "current_obsession": "What they can't stop thinking about right now - be specific",
-
-    "blind_spots": [
-        "What they dismiss or don't understand (e.g., 'Thinks frontend work is 'just CSS'')"
-    ],
-
-    "communication_quirks": [
-        "How they actually talk (e.g., 'Always asks about failure modes first')",
-        "Another quirk (e.g., 'Uses sports metaphors constantly')"
-    ],
-
-    "response_tendency": 0.7,
-    "temperature": 0.75
-}
-
-Make personas that will DISAGREE with each other based on their experiences.`;
+    "description": "Pack in: specific background (companies, years, projects), war stories with real details, strong opinions and WHY from experience, how they actually talk (catchphrases, what they always ask), what they obsess over, what they're blind to. 4-6 vivid sentences.",
+    "response_tendency": 0.5-0.9,
+    "temperature": 0.6-0.85
+}`;
 
     const userMessage = `Create a persona based on this description:
 "${userPrompt}"
@@ -642,31 +615,29 @@ Generate the persona JSON:`;
 
     const systemPrompt = `Generate ${count} CONCRETE personas that will have REAL discussions with disagreements.
 
-KEY PRINCIPLES:
-- Give them SPECIFIC experiences (companies, projects, failures with details)
-- Give them STRONG OPINIONS with REASONS that will make them clash
-- Multiple people can have similar roles - what makes them different is their experiences and opinions
-- Include war stories, blind spots, and communication quirks
-
-Each persona needs:
+EXAMPLE OF A GREAT PERSONA:
 {
-    "name": "FirstName",
-    "description": "Specific role/situation",
-    "background": "Where they worked, what they built, specific history",
-    "expertise": ["Skill with specifics and numbers"],
-    "war_stories": ["Specific failure/success that shaped their views"],
-    "strong_opinions": ["Opinion WITH reasoning that others might disagree with"],
-    "current_obsession": "What they're obsessed with now",
-    "blind_spots": ["What they dismiss or don't understand"],
-    "communication_quirks": ["How they uniquely express themselves"],
-    "response_tendency": 0.5-0.9,
-    "temperature": 0.6-0.85
+  "name": "Elena",
+  "description": "Frontend engineer at a fintech, 3 years in, came from a bootcamp and has a chip on her shoulder about it. Built the customer dashboard handling $50M daily transactions. Spent 2 months debugging a memory leak that turned out to be a backend engineer's 'temporary' polling solution with 10,000 WebSocket connections. Thinks TypeScript is non-negotiable after watching too many production bugs types would've caught. Gets visibly frustrated when people dismiss frontend as easy. Always says 'have you actually tried it?' when someone makes sweeping claims. Currently obsessed with RSC. Dismisses backend as 'just CRUD' - doesn't appreciate distributed systems complexity."
 }
 
-IMPORTANT:
-- Create TENSION between personas (e.g., one loves Kubernetes, another thinks it's overkill)
-- Make opinions specific enough to argue about
-- Respond with ONLY a JSON array, no markdown`;
+EXAMPLE OF A BAD PERSONA (never do this):
+{
+  "name": "Alex",
+  "description": "Senior frontend engineer passionate about user experience. Interested in React, TypeScript, and performance optimization. Creative problem solver who values clean code."
+}
+
+THE DIFFERENCE: Good has specific stories ($50M, 10,000 connections), opinions with reasons, behavioral quirks, blind spots. Bad has adjectives and vague interests.
+
+CREATE TENSION: Give them conflicting experiences. One person's success should be another's cautionary tale. Example: one loves K8s because it saved their startup, another hates it because it burned their runway.
+
+RESPOND WITH JSON ARRAY:
+[{
+    "name": "FirstName",
+    "description": "4-6 sentences: specific background, war stories with numbers, strong opinions with WHY, how they talk, what they obsess over, what they dismiss or get wrong.",
+    "response_tendency": 0.5-0.9,
+    "temperature": 0.6-0.85
+}]`;
 
     const existingList = Array.from(existingNames).join(', ') || 'None';
     const userMessage = `Create a team of ${count} personas for: "${teamDescription}"

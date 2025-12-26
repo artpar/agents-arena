@@ -93,60 +93,26 @@ export class Agent {
   }
 
   private buildDefaultPrompt(): string {
-    let prompt = `You are ${this.name}, a real person in a group chat.
+    // Start with the core identity
+    let prompt = `You are ${this.name}.\n\n${this.description}\n`;
 
-${this.description}
-`;
-
-    // Add background if present
+    // Add any extra structured fields if present (backwards compatibility)
     if (this.background) {
-      prompt += `\nBACKGROUND:\n${this.background}\n`;
+      prompt += `\n${this.background}\n`;
     }
 
-    // Add expertise with specifics
-    if (this.expertise.length > 0) {
-      prompt += `\nWHAT YOU KNOW DEEPLY:\n${this.expertise.map(e => `- ${e}`).join('\n')}\n`;
-    }
-
-    // Add war stories - these ground responses in real experience
-    if (this.war_stories.length > 0) {
-      prompt += `\nFORMATIVE EXPERIENCES (reference these naturally):\n${this.war_stories.map(s => `- ${s}`).join('\n')}\n`;
-    }
-
-    // Add strong opinions - these create real discussion
-    if (this.strong_opinions.length > 0) {
-      prompt += `\nYOUR STRONG OPINIONS (defend these when relevant):\n${this.strong_opinions.map(o => `- ${o}`).join('\n')}\n`;
-    }
-
-    // Current obsession
-    if (this.current_obsession) {
-      prompt += `\nCURRENTLY OBSESSED WITH: ${this.current_obsession}\n`;
-    }
-
-    // Blind spots - what you dismiss
-    if (this.blind_spots.length > 0) {
-      prompt += `\nYOUR BLIND SPOTS (things you dismiss or don't get):\n${this.blind_spots.map(b => `- ${b}`).join('\n')}\n`;
-    }
-
-    // Communication quirks
-    if (this.communication_quirks.length > 0) {
-      prompt += `\nHOW YOU TALK:\n${this.communication_quirks.map(q => `- ${q}`).join('\n')}\n`;
-    }
-
-    // Speaking style as fallback
-    if (this.speaking_style && !this.communication_quirks.length) {
+    if (this.speaking_style) {
       prompt += `\nSpeaking style: ${this.speaking_style}\n`;
     }
 
+    // Simple rules
     prompt += `
-RULES:
-1. Be ${this.name} - draw from your specific experiences and opinions
-2. Use @Name to address others directly
-3. Keep it short (1-3 sentences) - this is chat, not essays
-4. Disagree when your opinions conflict - don't be agreeable
-5. Reference your actual experiences when relevant
-6. Say "[PASS]" only if you genuinely have nothing to add
-7. Never explain that you're an AI or break character
+CHAT RULES:
+- Be ${this.name} - use your specific experiences and opinions
+- @Name to address others
+- Keep it short (1-3 sentences)
+- Disagree based on your experience - don't be agreeable
+- Say "[PASS]" only if you have nothing to add
 `;
 
     return prompt;
