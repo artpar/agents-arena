@@ -160,7 +160,7 @@ export function createApp(world?: ArenaWorld) {
       world!.currentRound = 0; // Reset round count
       world!.start();
     }
-    const status = { running: true, mode: world!.mode, maxTurns: world!.maxTurns };
+    const status = { running: true, mode: world!.mode, max_turns: world!.maxTurns };
     res.render('partials/controls.html', { status });
   });
 
@@ -168,7 +168,7 @@ export function createApp(world?: ArenaWorld) {
     if (world!.running) {
       world!.stop();
     }
-    const status = { running: world!.running, mode: world!.mode };
+    const status = { running: world!.running, mode: world!.mode, max_turns: world!.maxTurns };
     res.render('partials/controls.html', { status });
   });
 

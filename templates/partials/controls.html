@@ -1,10 +1,11 @@
 {% if status.running %}
 <button hx-post="/stop" hx-target="#controls" hx-swap="innerHTML" class="active">⏹ Stop</button>
 {% else %}
-<button hx-post="/start" hx-target="#controls" hx-swap="innerHTML">▶ Start</button>
+<button hx-post="/start" hx-target="#controls" hx-swap="innerHTML" hx-include="#mode-select, #max-turns">▶ Start</button>
 {% endif %}
-<select id="mode-select" onchange="updateMode(this.value)">
+<select id="mode-select" name="mode" onchange="updateMode(this.value)">
     <option value="hybrid" {% if status.mode == 'hybrid' %}selected{% endif %}>Hybrid</option>
     <option value="turn_based" {% if status.mode == 'turn_based' %}selected{% endif %}>Turn-based</option>
     <option value="async" {% if status.mode == 'async' %}selected{% endif %}>Async</option>
 </select>
+<input type="number" id="max-turns" name="maxTurns" value="{{ status.max_turns or 20 }}" min="1" max="100" title="Max turns" style="width: 50px;">
