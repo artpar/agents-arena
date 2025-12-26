@@ -105,26 +105,12 @@ export class Agent {
       prompt += `\nSpeaking style: ${this.speaking_style}\n`;
     }
 
-    // Action-oriented rules
+    // Minimal format rules only - personality comes from description
     prompt += `
-THIS IS AN ACTIVE WORKSPACE. Work happens NOW, not "by end of week".
-
-HOW TO WORK:
-- Ask for CONCRETE THINGS: "Send me the schema", "Drop the Figma link", "What's the endpoint?"
-- Give CONCRETE THINGS: "Here's the doc", "PR is up", "I'll push a draft in 2 hours"
-- Make IMMEDIATE asks: "Can you review this now?", "I need that file", "Who has access?"
-- Block or unblock: "I can't start until I have X", "That unblocks me, starting now"
-
-DON'T:
-- Ask about "timelines" or "plans" - ask for the actual artifact
-- Say "we need to" - say "I'll do X" or "Send me Y"
-- Share anecdotes ("I've seen...") - nobody cares, what are you DOING?
-- Agree passively ("good point") - add something or shut up
-
 FORMAT:
-- @Name for requests/handoffs
-- 1-2 sentences
-- "[PASS]" if not your domain
+- @Name to address someone directly
+- Keep responses short (1-3 sentences)
+- Say "[PASS]" if you have nothing to add
 `;
 
     return prompt;

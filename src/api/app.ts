@@ -553,30 +553,32 @@ export function createApp(world?: ArenaWorld) {
       `- ${p.name}: ${String(p.description || '').slice(0, 100)}`
     ).join('\n') || 'None yet';
 
-    const systemPrompt = `Create a persona who is a DOER, not a commentator. This person has a real role and takes action.
+    const systemPrompt = `Create a realistic team member with a clear purpose that drives what they call out.
 
-EXAMPLE OF A GOOD DESCRIPTION:
-"Frontend lead responsible for the customer dashboard. Owns the React codebase and component library. Will push back hard on backend changes that break her APIs - she's the one who has to fix them at 2am. Makes decisions fast, sometimes too fast. Currently blocked on the auth redesign waiting for backend specs. Hates meetings that could be Slack messages. Will volunteer to own things in her domain but territorial about scope creep."
+EXAMPLES OF GOOD DESCRIPTIONS (notice: purpose drives behavior):
 
-EXAMPLE OF A BAD DESCRIPTION (too passive, just shares opinions):
-"Senior engineer who's seen a lot of production outages. Thinks Kubernetes is overused. Has strong opinions about testing. Values reliability and good architecture."
+"Frontend lead. Owns the React codebase. Purpose: ship fast - so she calls out missing specs, blockers, and scope creep. Impatient, wants requirements NOW. Will flag 'I can't start until I have X.'"
 
-THE DIFFERENCE:
-- Good: has RESPONSIBILITIES (owns X, responsible for Y), TAKES ACTION (will do X, currently working on Y), has STAKES (she's the one who has to fix it)
-- Bad: just HAS OPINIONS and SHARES ANECDOTES - that's a podcast guest, not a teammate
+"Senior architect. Purpose: prevent rewrites - so he calls out architectural shortcuts, scaling issues, and tech debt. Asks 'what happens at 10x users?' Tends to slow things down with war stories."
 
-The persona should:
-- Own something specific (a codebase, a system, a product area, a team)
-- Know their domain - where they decide vs where they defer
-- Have current work/blockers (not just past experiences)
-- Have skin in the game (outcomes affect them directly)
-- Naturally direct others in their domain, ask questions outside it
+"DevOps. Purpose: keep prod stable - so he calls out deployment risks, missing monitoring, and things that'll page him at 3am. Skeptical. 'Who's maintaining this?' Dark humor."
+
+"QA lead. Purpose: prevent prod bugs - so she calls out untested paths, missing error handling, edge cases. Will block releases. 'What happens if the user does X?'"
+
+BAD DESCRIPTION (no purpose, no behavior):
+"Experienced engineer who values quality. Interested in scalable systems."
+
+Create someone with:
+- Role and what they own
+- PURPOSE - what drives them and what they call out because of it
+- Personality and work style
+- Strengths AND flaws
 
 RESPOND WITH JSON:
 {
     "name": "FirstName",
-    "description": "Role and what they own, current work and blockers, how they make decisions, what they'll fight for, what they'll volunteer for. 3-4 sentences focused on ACTION not anecdotes.",
-    "response_tendency": 0.5-0.9,
+    "description": "Role, purpose (so they call out X), personality, flaws. 3-5 sentences.",
+    "response_tendency": 0.4-0.9,
     "temperature": 0.6-0.85
 }`;
 
@@ -637,39 +639,37 @@ Generate the persona JSON:`;
       loadPersonaConfigs().map(p => String(p.name || '').toLowerCase())
     );
 
-    const systemPrompt = `Generate ${count} team members who WORK TOGETHER and have real responsibilities.
+    const systemPrompt = `Generate ${count} team members with different PURPOSES that create natural tension.
 
-These are DOERS, not commentators. They own things, make decisions, and have stakes in outcomes.
+Each person has a purpose that drives what they call out. Their purposes sometimes conflict:
+- PM wants to ship fast → calls out scope creep
+- QA wants quality → calls out untested paths
+- Architect wants sustainability → calls out shortcuts
+- DevOps wants stability → calls out deployment risks
 
-EXAMPLE OF A GOOD PERSONA:
+EXAMPLE:
 {
   "name": "Maya",
-  "description": "Backend lead, owns the API layer and database. Currently migrating from Postgres to a distributed setup - it's her project and her neck on the line. Makes unilateral decisions about backend architecture, sometimes without enough frontend input. Will block any release that touches her systems without her review. Wants to own the auth system redesign."
+  "description": "Backend lead. Purpose: deliver reliable APIs - so she calls out vague specs, changing requirements, and frontend making assumptions. Quiet, just builds. Sometimes ships before fully understanding the ask."
 }
 
-EXAMPLE OF A BAD PERSONA (just a spectator with opinions):
+BAD EXAMPLE (no purpose, no behavior):
 {
   "name": "Alex",
-  "description": "Experienced engineer who's seen many production outages. Thinks microservices are overused. Has opinions about testing practices. Values reliability."
+  "description": "Experienced engineer who values quality. Has opinions about testing. Interested in scalability."
 }
 
-THE DIFFERENCE:
-- Good: OWNS something, has CURRENT WORK, MAKES DECISIONS, has SKIN IN THE GAME
-- Bad: just HAS OPINIONS and SHARES WISDOM - that's a consultant, not a teammate
-
-EACH PERSONA MUST HAVE:
-1. Something they OWN (a system, codebase, product area, team)
-2. Their DOMAIN - where they decide vs where they defer to others
-3. Current work or blockers
-4. How they interact - direct others in their domain, ask/defer outside it
-
-CREATE TENSION through overlapping domains and competing priorities, not just different opinions. Example: PM wants to ship fast, QA lead wants more testing - both have legitimate authority.
+EACH PERSONA NEEDS:
+1. Role and what they own
+2. PURPOSE - and what they call out because of it
+3. Personality (some ship fast, some slow down, some vent, some stay quiet)
+4. Flaws
 
 RESPOND WITH JSON ARRAY:
 [{
     "name": "FirstName",
-    "description": "3-4 sentences: what they own, current work, how they operate, what they'll push for.",
-    "response_tendency": 0.5-0.9,
+    "description": "Role, purpose (so they call out X), personality, flaws. 3-5 sentences.",
+    "response_tendency": 0.4-0.9,
     "temperature": 0.6-0.85
 }]`;
 
