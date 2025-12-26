@@ -190,8 +190,12 @@ Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, 
       console.log(`Agent ${this.name} responded: ${responseText.slice(0, 50)}...`);
       return responseText;
 
-    } catch (error) {
-      console.error(`Agent ${this.name} error:`, error);
+    } catch (error: unknown) {
+      const err = error as Error & { status?: number; error?: { message?: string } };
+      console.error(`Agent ${this.name} API error:`);
+      console.error(`  Status: ${err.status || 'unknown'}`);
+      console.error(`  Message: ${err.message || err.error?.message || 'unknown'}`);
+      if (err.stack) console.error(`  Stack: ${err.stack.split('\n')[1]}`);
       this.status = AgentStatus.IDLE;
       return null;
     } finally {

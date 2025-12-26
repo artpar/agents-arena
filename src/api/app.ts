@@ -28,6 +28,7 @@ const __dirname = dirname(__filename);
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 const CONFIGS_DIR = join(__dirname, '..', '..', 'configs', 'agents');
 
+
 /**
  * WebSocket connection manager.
  */
@@ -362,11 +363,18 @@ export function createApp(world?: ArenaWorld) {
         channel.name
       );
       await world!.broadcast(message);
+      res.json({
+        status: 'ok',
+        agent: agent.name,
+        message: responseText.slice(0, 100) + (responseText.length > 100 ? '...' : '')
+      });
+    } else {
+      res.json({
+        status: 'pass',
+        agent: agent.name,
+        message: 'Agent chose not to respond'
+      });
     }
-
-    res.render('partials/agents.html', {
-      agents: world!.registry.all()
-    });
   });
 
   // === API Routes ===
