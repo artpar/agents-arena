@@ -5,7 +5,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { ScheduleMode, AgentStatus, MessageType, WorldStatus } from '../core/types.js';
+import { ScheduleMode, AgentStatus, MessageType, WorldStatus, Attachment } from '../core/types.js';
 import { EventBus } from '../core/events.js';
 import { Message } from '../core/message.js';
 import { Agent } from '../agents/agent.js';
@@ -191,13 +191,20 @@ export class ArenaWorld {
   async injectMessage(
     content: string,
     senderName: string = 'Human',
-    channelName?: string
+    channelName?: string,
+    attachments?: Attachment[]
   ): Promise<Message> {
     const message = new Message(
       'human',
       senderName,
       content,
-      channelName || this.defaultChannel
+      channelName || this.defaultChannel,
+      MessageType.CHAT,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      attachments
     );
     await this.broadcast(message);
     return message;

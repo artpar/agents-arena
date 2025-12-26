@@ -95,7 +95,8 @@ export class Channel {
       sender_name: message.sender_name,
       content: message.content,
       type: message.type,
-      mentions: message.mentions
+      mentions: message.mentions,
+      attachments: message.attachments
     });
 
     // Update agent spoke time if it's an agent
@@ -122,7 +123,10 @@ export class Channel {
       this.name,
       row.type as any,
       row.id,
-      new Date(row.created_at)
+      new Date(row.created_at),
+      undefined,
+      undefined,
+      row.attachments ? JSON.parse(row.attachments) : []
     ));
   }
 

@@ -105,10 +105,18 @@ function createTables(db: Database.Database): void {
       content TEXT NOT NULL,
       type TEXT DEFAULT 'chat',
       mentions TEXT DEFAULT '[]',
+      attachments TEXT DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
     )
   `);
+
+  // Add attachments column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT DEFAULT '[]'`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
 
   // Sessions table (simulation runs)
   db.exec(`
@@ -333,6 +341,7 @@ export interface MessageRow {
   content: string;
   type: string;
   mentions: string;
+  attachments: string;
   created_at: string;
 }
 
@@ -344,11 +353,12 @@ export function createMessage(message: {
   content: string;
   type?: string;
   mentions?: string[];
+  attachments?: Array<{ id: string; filename: string; mimetype: string; size: number; url: string }>;
 }): MessageRow {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO messages (id, room_id, sender_id, sender_name, content, type, mentions)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, room_id, sender_id, sender_name, content, type, mentions, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING *
   `);
   return stmt.get(
@@ -358,7 +368,8 @@ export function createMessage(message: {
     message.sender_name,
     message.content,
     message.type || 'chat',
-    JSON.stringify(message.mentions || [])
+    JSON.stringify(message.mentions || []),
+    JSON.stringify(message.attachments || [])
   ) as MessageRow;
 }
 

@@ -3,7 +3,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { MessageType, MessageData } from './types.js';
+import { MessageType, MessageData, Attachment } from './types.js';
 
 export class Message {
   id: string;
@@ -15,6 +15,7 @@ export class Message {
   timestamp: Date;
   reply_to?: string;
   mentions: string[];
+  attachments: Attachment[];
 
   constructor(
     sender_id: string,
@@ -25,7 +26,8 @@ export class Message {
     id?: string,
     timestamp?: Date,
     reply_to?: string,
-    mentions?: string[]
+    mentions?: string[],
+    attachments?: Attachment[]
   ) {
     this.id = id || uuidv4();
     this.sender_id = sender_id;
@@ -36,6 +38,7 @@ export class Message {
     this.timestamp = timestamp || new Date();
     this.reply_to = reply_to;
     this.mentions = mentions || this.extractMentions();
+    this.attachments = attachments || [];
   }
 
   /**
@@ -60,7 +63,8 @@ export class Message {
       type: this.type,
       timestamp: this.timestamp.toISOString(),
       reply_to: this.reply_to,
-      mentions: this.mentions
+      mentions: this.mentions,
+      attachments: this.attachments
     };
   }
 
@@ -77,7 +81,8 @@ export class Message {
       data.id,
       new Date(data.timestamp),
       data.reply_to,
-      data.mentions || []
+      data.mentions || [],
+      data.attachments || []
     );
   }
 

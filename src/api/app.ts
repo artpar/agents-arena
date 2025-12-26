@@ -9,14 +9,16 @@ import { WebSocketServer, WebSocket } from 'ws';
 import nunjucks from 'nunjucks';
 import yaml from 'js-yaml';
 import Anthropic from '@anthropic-ai/sdk';
+import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { ArenaWorld } from '../arena/world.js';
 import { Agent } from '../agents/agent.js';
 import { loadAgentConfig } from '../agents/loader.js';
-import { ScheduleMode, MessageType } from '../core/types.js';
+import { ScheduleMode, MessageType, Attachment } from '../core/types.js';
 import { Message } from '../core/message.js';
 import { Event } from '../core/events.js';
 import * as db from '../core/database.js';
@@ -27,6 +29,43 @@ const __dirname = dirname(__filename);
 // Template directory
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 const CONFIGS_DIR = join(__dirname, '..', '..', 'configs', 'agents');
+const UPLOADS_DIR = join(__dirname, '..', '..', 'uploads');
+
+// Ensure uploads directory exists
+if (!existsSync(UPLOADS_DIR)) {
+  mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueId = uuidv4();
+    const ext = extname(file.originalname);
+    cb(null, `${uniqueId}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow images and common file types
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf', 'text/plain', 'text/markdown'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`));
+    }
+  }
+});
 
 
 /**
@@ -88,6 +127,7 @@ export function createApp(world?: ArenaWorld) {
   // Middleware
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use('/uploads', express.static(UPLOADS_DIR));
 
   // Subscribe to world events for WebSocket broadcast
   world.eventBus.subscribe('message', (event: Event) => {
@@ -145,9 +185,25 @@ export function createApp(world?: ArenaWorld) {
 
   // === Actions ===
 
-  app.post('/send', async (req: Request, res: Response) => {
+  app.post('/send', upload.array('files', 5), async (req: Request, res: Response) => {
     const { content, sender = 'Human' } = req.body;
-    await world!.injectMessage(content, sender);
+    const files = req.files as Express.Multer.File[] | undefined;
+
+    // Build attachments array from uploaded files
+    const attachments: Attachment[] = [];
+    if (files && files.length > 0) {
+      for (const file of files) {
+        attachments.push({
+          id: file.filename.split('.')[0], // UUID part
+          filename: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          url: `/uploads/${file.filename}`
+        });
+      }
+    }
+
+    await world!.injectMessage(content || '', sender, undefined, attachments.length > 0 ? attachments : undefined);
     res.send(''); // HTMX will update via WebSocket
   });
 

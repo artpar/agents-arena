@@ -297,6 +297,98 @@
             border-color: var(--accent);
         }
 
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .file-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+
+        .file-btn:hover {
+            background: var(--accent);
+        }
+
+        .file-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .file-preview:empty {
+            display: none;
+        }
+
+        .file-preview-item {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .file-preview-item img {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .file-preview-item .remove-file {
+            cursor: pointer;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        /* Message attachments */
+        .message-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
+        .attachment-image {
+            display: block;
+            max-width: 300px;
+        }
+
+        .attachment-image img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .attachment-file {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .attachment-file:hover {
+            background: var(--accent);
+        }
+
         .sidebar {
             width: 250px;
             background: var(--bg-secondary);
@@ -579,10 +671,17 @@
             <div class="typing-indicator" id="typing-indicator"></div>
 
             <div class="input-area">
-                <form hx-post="/send" hx-swap="none" hx-on::after-request="document.querySelector('input[name=content]').value = ''">
-                    <input type="text" name="sender" id="sender-name" placeholder="Name" value="Human">
-                    <input type="text" name="content" placeholder="Type a message..." autocomplete="off" autofocus>
-                    <button type="submit">Send</button>
+                <form id="message-form" hx-post="/send" hx-swap="none" hx-encoding="multipart/form-data" hx-on::after-request="clearMessageForm()">
+                    <div class="input-row">
+                        <input type="text" name="sender" id="sender-name" placeholder="Name" value="Human">
+                        <input type="text" name="content" id="message-content" placeholder="Type a message..." autocomplete="off" autofocus>
+                        <label class="file-btn" title="Attach files">
+                            📎
+                            <input type="file" name="files" id="file-input" multiple accept="image/*,.pdf,.txt,.md" hidden>
+                        </label>
+                        <button type="submit">Send</button>
+                    </div>
+                    <div id="file-preview" class="file-preview"></div>
                 </form>
             </div>
         </div>
@@ -653,6 +752,73 @@
         }
         senderInput.addEventListener('change', function() {
             localStorage.setItem('arena-sender-name', this.value || 'Human');
+        });
+
+        // File upload handling
+        const fileInput = document.getElementById('file-input');
+        const filePreview = document.getElementById('file-preview');
+        const messageContent = document.getElementById('message-content');
+
+        fileInput.addEventListener('change', updateFilePreview);
+
+        function updateFilePreview() {
+            filePreview.innerHTML = '';
+            const files = fileInput.files;
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const item = document.createElement('div');
+                item.className = 'file-preview-item';
+
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    item.appendChild(img);
+                }
+
+                const name = document.createElement('span');
+                name.textContent = file.name.length > 20 ? file.name.slice(0, 17) + '...' : file.name;
+                item.appendChild(name);
+
+                const remove = document.createElement('span');
+                remove.className = 'remove-file';
+                remove.textContent = '×';
+                remove.onclick = () => {
+                    // Can't remove individual files from FileList, so clear all
+                    fileInput.value = '';
+                    updateFilePreview();
+                };
+                item.appendChild(remove);
+
+                filePreview.appendChild(item);
+            }
+        }
+
+        function clearMessageForm() {
+            messageContent.value = '';
+            fileInput.value = '';
+            filePreview.innerHTML = '';
+        }
+
+        // Drag and drop support
+        const inputArea = document.querySelector('.input-area');
+
+        inputArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            inputArea.style.borderColor = 'var(--accent)';
+        });
+
+        inputArea.addEventListener('dragleave', () => {
+            inputArea.style.borderColor = '';
+        });
+
+        inputArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            inputArea.style.borderColor = '';
+            const dt = e.dataTransfer;
+            if (dt.files.length > 0) {
+                fileInput.files = dt.files;
+                updateFilePreview();
+            }
         });
 
         // Generate consistent color from string

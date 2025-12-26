@@ -52,6 +52,14 @@ export interface AgentConfig {
   communication_quirks?: string[];  // How they uniquely express themselves
 }
 
+export interface Attachment {
+  id: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  url: string;
+}
+
 export interface MessageData {
   id: string;
   sender_id: string;
@@ -62,6 +70,7 @@ export interface MessageData {
   timestamp: string;
   reply_to?: string;
   mentions: string[];
+  attachments?: Attachment[];
 }
 
 export interface ChannelData {
