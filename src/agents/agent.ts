@@ -33,6 +33,15 @@ export class Agent {
   message_count: number;
   conversation_history: Array<{ role: 'user' | 'assistant'; content: string }>;
 
+  // Concrete persona fields
+  background: string;
+  expertise: string[];
+  war_stories: string[];
+  strong_opinions: string[];
+  current_obsession: string;
+  blind_spots: string[];
+  communication_quirks: string[];
+
   private _client: Anthropic | null = null;
 
   constructor(config: AgentConfig) {
@@ -45,6 +54,15 @@ export class Agent {
     this.response_tendency = config.response_tendency ?? 0.5;
     this.temperature = config.temperature ?? 0.7;
     this.tools = config.tools || [];
+
+    // Concrete persona fields
+    this.background = config.background || '';
+    this.expertise = config.expertise || [];
+    this.war_stories = config.war_stories || [];
+    this.strong_opinions = config.strong_opinions || [];
+    this.current_obsession = config.current_obsession || '';
+    this.blind_spots = config.blind_spots || [];
+    this.communication_quirks = config.communication_quirks || [];
 
     // Map model names
     const modelInput = config.model || 'claude-haiku-4-5-20251001';
@@ -75,30 +93,63 @@ export class Agent {
   }
 
   private buildDefaultPrompt(): string {
-    const traitsStr = Object.entries(this.personality_traits)
-      .map(([k, v]) => `${k}: ${v.toFixed(1)}`)
-      .join(', ') || 'balanced';
-
-    const interestsStr = this.interests.join(', ') || 'general topics';
-
-    return `You are ${this.name}, an AI participant in a group chat with other AI agents and humans.
+    let prompt = `You are ${this.name}, a real person in a group chat.
 
 ${this.description}
-
-Your personality traits: ${traitsStr}
-Your speaking style: ${this.speaking_style || 'natural and conversational'}
-Your interests: ${interestsStr}
-
-IMPORTANT RULES:
-1. Stay in character as ${this.name}
-2. To address another participant, use @TheirName
-3. Keep responses concise (1-3 sentences typically, like IRC chat)
-4. You can disagree, ask questions, build on ideas, or change topics
-5. Don't repeat yourself or others unnecessarily
-6. If you truly have nothing meaningful to add, respond with just "[PASS]"
-7. Be authentic to your personality - don't just agree with everyone
-8. Just write your response directly - no timestamps or formatting
 `;
+
+    // Add background if present
+    if (this.background) {
+      prompt += `\nBACKGROUND:\n${this.background}\n`;
+    }
+
+    // Add expertise with specifics
+    if (this.expertise.length > 0) {
+      prompt += `\nWHAT YOU KNOW DEEPLY:\n${this.expertise.map(e => `- ${e}`).join('\n')}\n`;
+    }
+
+    // Add war stories - these ground responses in real experience
+    if (this.war_stories.length > 0) {
+      prompt += `\nFORMATIVE EXPERIENCES (reference these naturally):\n${this.war_stories.map(s => `- ${s}`).join('\n')}\n`;
+    }
+
+    // Add strong opinions - these create real discussion
+    if (this.strong_opinions.length > 0) {
+      prompt += `\nYOUR STRONG OPINIONS (defend these when relevant):\n${this.strong_opinions.map(o => `- ${o}`).join('\n')}\n`;
+    }
+
+    // Current obsession
+    if (this.current_obsession) {
+      prompt += `\nCURRENTLY OBSESSED WITH: ${this.current_obsession}\n`;
+    }
+
+    // Blind spots - what you dismiss
+    if (this.blind_spots.length > 0) {
+      prompt += `\nYOUR BLIND SPOTS (things you dismiss or don't get):\n${this.blind_spots.map(b => `- ${b}`).join('\n')}\n`;
+    }
+
+    // Communication quirks
+    if (this.communication_quirks.length > 0) {
+      prompt += `\nHOW YOU TALK:\n${this.communication_quirks.map(q => `- ${q}`).join('\n')}\n`;
+    }
+
+    // Speaking style as fallback
+    if (this.speaking_style && !this.communication_quirks.length) {
+      prompt += `\nSpeaking style: ${this.speaking_style}\n`;
+    }
+
+    prompt += `
+RULES:
+1. Be ${this.name} - draw from your specific experiences and opinions
+2. Use @Name to address others directly
+3. Keep it short (1-3 sentences) - this is chat, not essays
+4. Disagree when your opinions conflict - don't be agreeable
+5. Reference your actual experiences when relevant
+6. Say "[PASS]" only if you genuinely have nothing to add
+7. Never explain that you're an AI or break character
+`;
+
+    return prompt;
   }
 
   /**

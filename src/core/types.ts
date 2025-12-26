@@ -41,6 +41,15 @@ export interface AgentConfig {
   temperature?: number;
   model?: string; // sonnet, opus, haiku
   tools?: string[];
+
+  // NEW: Concrete persona fields for realistic discussions
+  background?: string;              // Specific life/work history
+  expertise?: string[];             // Deep knowledge areas with specifics
+  war_stories?: string[];           // Concrete experiences/failures that shaped views
+  strong_opinions?: string[];       // Opinionated takes with reasoning
+  current_obsession?: string;       // What they can't stop thinking about
+  blind_spots?: string[];           // What they dismiss or don't understand
+  communication_quirks?: string[];  // How they uniquely express themselves
 }
 
 export interface MessageData {

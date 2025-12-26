@@ -536,29 +536,52 @@ export function createApp(world?: ArenaWorld) {
       `- ${p.name}: ${String(p.description || '').slice(0, 100)}`
     ).join('\n') || 'None yet';
 
-    const systemPrompt = `You are a persona designer for an AI chat simulation. Create unique, interesting personas that will have engaging conversations.
+    const systemPrompt = `You are a persona designer. Create CONCRETE personas that will have REAL discussions, not abstract ones.
 
-Given the user's description and the existing personas (to avoid overlap), generate a complete persona configuration.
+The key to concrete personas:
+- Specific experiences, not generic roles
+- Strong opinions WITH REASONS, not just interests
+- Real numbers, real tools, real failures
+- Communication quirks that make them human
 
-IMPORTANT: Respond with ONLY valid JSON, no markdown formatting, no code blocks. The JSON must have this exact structure:
+IMPORTANT: Respond with ONLY valid JSON, no markdown. Structure:
 {
-    "name": "SingleWordName",
-    "description": "2-3 sentence description of who this persona is",
-    "speaking_style": "How they speak - tone, patterns, quirks",
-    "personality_traits": {
-        "curiosity": 0.0-1.0,
-        "assertiveness": 0.0-1.0,
-        "humor": 0.0-1.0,
-        "empathy": 0.0-1.0,
-        "skepticism": 0.0-1.0,
-        "creativity": 0.0-1.0
-    },
-    "interests": ["interest1", "interest2", "interest3"],
-    "response_tendency": 0.0-1.0,
-    "temperature": 0.5-0.9
+    "name": "FirstName",
+    "description": "Who they are - be specific about their actual job/situation",
+
+    "background": "Specific history: where they worked, what they built, what went wrong. Include company names, years, specific projects.",
+
+    "expertise": [
+        "Specific skill with detail (e.g., 'PostgreSQL performance tuning - reduced query times from 2s to 50ms at scale')",
+        "Another concrete skill with numbers or specifics"
+    ],
+
+    "war_stories": [
+        "A specific failure or success that shaped their views (e.g., 'Spent 3 months migrating to microservices, then migrated back when latency tripled')",
+        "Another formative experience with specifics"
+    ],
+
+    "strong_opinions": [
+        "Opinion WITH reasoning (e.g., 'GraphQL is overengineered for 90% of apps because I've seen 5 teams waste months on schema design when REST would've shipped in days')",
+        "Another contrarian or strong take with WHY"
+    ],
+
+    "current_obsession": "What they can't stop thinking about right now - be specific",
+
+    "blind_spots": [
+        "What they dismiss or don't understand (e.g., 'Thinks frontend work is 'just CSS'')"
+    ],
+
+    "communication_quirks": [
+        "How they actually talk (e.g., 'Always asks about failure modes first')",
+        "Another quirk (e.g., 'Uses sports metaphors constantly')"
+    ],
+
+    "response_tendency": 0.7,
+    "temperature": 0.75
 }
 
-Make the persona distinct, memorable, and different from existing ones.`;
+Make personas that will DISAGREE with each other based on their experiences.`;
 
     const userMessage = `Create a persona based on this description:
 "${userPrompt}"
@@ -617,11 +640,33 @@ Generate the persona JSON:`;
       loadPersonaConfigs().map(p => String(p.name || '').toLowerCase())
     );
 
-    const systemPrompt = `You are a team designer for an AI chat simulation. Generate a team of ${count} personas based on the user's description.
+    const systemPrompt = `Generate ${count} CONCRETE personas that will have REAL discussions with disagreements.
 
-Create a REALISTIC team composition - multiple people can share the same role (e.g., 2 baristas, 3 developers, 2 nurses). Not everyone needs a unique job title. What makes each persona distinct is their personality, background, and speaking style - not necessarily their role.
+KEY PRINCIPLES:
+- Give them SPECIFIC experiences (companies, projects, failures with details)
+- Give them STRONG OPINIONS with REASONS that will make them clash
+- Multiple people can have similar roles - what makes them different is their experiences and opinions
+- Include war stories, blind spots, and communication quirks
 
-IMPORTANT: Respond with ONLY a valid JSON array, no markdown, no code blocks.`;
+Each persona needs:
+{
+    "name": "FirstName",
+    "description": "Specific role/situation",
+    "background": "Where they worked, what they built, specific history",
+    "expertise": ["Skill with specifics and numbers"],
+    "war_stories": ["Specific failure/success that shaped their views"],
+    "strong_opinions": ["Opinion WITH reasoning that others might disagree with"],
+    "current_obsession": "What they're obsessed with now",
+    "blind_spots": ["What they dismiss or don't understand"],
+    "communication_quirks": ["How they uniquely express themselves"],
+    "response_tendency": 0.5-0.9,
+    "temperature": 0.6-0.85
+}
+
+IMPORTANT:
+- Create TENSION between personas (e.g., one loves Kubernetes, another thinks it's overkill)
+- Make opinions specific enough to argue about
+- Respond with ONLY a JSON array, no markdown`;
 
     const existingList = Array.from(existingNames).join(', ') || 'None';
     const userMessage = `Create a team of ${count} personas for: "${teamDescription}"
