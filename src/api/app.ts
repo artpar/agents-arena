@@ -153,11 +153,14 @@ export function createApp(world?: ArenaWorld) {
 
   app.post('/start', async (req: Request, res: Response) => {
     const mode = req.body.mode || 'hybrid';
+    const maxTurns = parseInt(req.body.maxTurns) || 20;
     if (!world!.running) {
       world!.mode = mode as ScheduleMode;
+      world!.maxTurns = maxTurns;
+      world!.currentRound = 0; // Reset round count
       world!.start();
     }
-    const status = { running: true, mode: world!.mode };
+    const status = { running: true, mode: world!.mode, maxTurns: world!.maxTurns };
     res.render('partials/controls.html', { status });
   });
 

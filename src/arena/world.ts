@@ -27,6 +27,7 @@ export class ArenaWorld {
   defaultChannel: string;
   sessionId: string | null = null;
   totalMessagesInSession: number = 0;
+  maxTurns: number = 20; // Auto-stop after this many rounds
 
   private schedulerInterval: NodeJS.Timeout | null = null;
   private lastRoundTime: Date = new Date();
@@ -268,6 +269,13 @@ export class ArenaWorld {
   private async tick(): Promise<void> {
     if (!this.running) return;
 
+    // Check if we've hit max turns
+    if (this.maxTurns > 0 && this.currentRound >= this.maxTurns) {
+      console.log(`Max turns (${this.maxTurns}) reached, stopping simulation`);
+      this.stop();
+      return;
+    }
+
     switch (this.mode) {
       case ScheduleMode.TURN_BASED:
         await this.tickTurnBased();
@@ -475,6 +483,7 @@ IMPORTANT: Just write your response directly. Do NOT include your name, timestam
       running: this.running,
       mode: this.mode,
       current_round: this.currentRound,
+      max_turns: this.maxTurns,
       start_time: this.startTime?.toISOString() || null,
       agents: {
         count: this.registry.count(),

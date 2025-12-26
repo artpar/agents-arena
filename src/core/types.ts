@@ -79,6 +79,7 @@ export interface WorldStatus {
   running: boolean;
   mode: string;
   current_round: number;
+  max_turns: number;
   start_time: string | null;
   agents: {
     count: number;

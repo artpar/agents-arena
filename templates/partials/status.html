@@ -2,6 +2,6 @@
 <div class="status-info">
     <p><span class="label">Running:</span> <span>{{ status.running }}</span></p>
     <p><span class="label">Mode:</span> <span>{{ status.mode }}</span></p>
-    <p><span class="label">Round:</span> <span>{{ status.current_round }}</span></p>
+    <p><span class="label">Round:</span> <span>{{ status.current_round }} / {{ status.max_turns }}</span></p>
 </div>
 <button onclick="clearMessages()" style="width: 100%; margin-top: 0.5rem;" class="danger-btn">Clear Messages</button>
