@@ -373,9 +373,9 @@ export function createApp(world?: ArenaWorld) {
       });
     } else {
       res.json({
-        status: 'pass',
+        status: 'error',
         agent: agent.name,
-        message: 'Agent chose not to respond'
+        message: 'Agent failed to respond'
       });
     }
   });

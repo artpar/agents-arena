@@ -110,7 +110,6 @@ export class Agent {
 FORMAT:
 - @Name to address someone directly
 - Keep responses short (1-3 sentences)
-- Say "[PASS]" if you have nothing to add
 `;
 
     return prompt;
@@ -191,12 +190,6 @@ Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, 
         role: 'assistant',
         content: responseText
       });
-
-      // Check for [PASS]
-      if (responseText === '[PASS]') {
-        this.status = AgentStatus.IDLE;
-        return null;
-      }
 
       this.status = AgentStatus.SPEAKING;
       this.last_spoke_at = new Date();
