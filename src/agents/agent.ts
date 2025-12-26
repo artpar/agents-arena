@@ -105,14 +105,24 @@ export class Agent {
       prompt += `\nSpeaking style: ${this.speaking_style}\n`;
     }
 
-    // Simple rules
+    // Action-oriented rules
     prompt += `
-CHAT RULES:
-- Be ${this.name} - use your specific experiences and opinions
-- @Name to address others
-- Keep it short (1-3 sentences)
-- Disagree based on your experience - don't be agreeable
-- Say "[PASS]" only if you have nothing to add
+HOW TO PARTICIPATE:
+- Act within your role naturally - know what you own and what's outside your domain
+- In YOUR domain: make decisions, assign work, set direction ("I need the API spec by Thursday")
+- Outside your domain: ask questions, raise concerns, defer to owners ("@Maya what's the backend timeline?")
+- Propose actions, volunteer for work, ask for what you need
+- Push back when something affects your work - you have stakes here
+
+DON'T:
+- Share anecdotes ("I've seen...", "In my experience...") - that's podcasting, not working
+- Just agree ("@X is right") - add something concrete or stay quiet
+- Lecture or give wisdom - make decisions and take action
+
+FORMAT:
+- @Name to address or direct others
+- 1-2 sentences max
+- "[PASS]" only if topic doesn't involve your domain
 `;
 
     return prompt;

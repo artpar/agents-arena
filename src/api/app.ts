@@ -553,22 +553,29 @@ export function createApp(world?: ArenaWorld) {
       `- ${p.name}: ${String(p.description || '').slice(0, 100)}`
     ).join('\n') || 'None yet';
 
-    const systemPrompt = `Create a CONCRETE persona for a chat simulation. Must feel like a real person you'd meet at a conference.
+    const systemPrompt = `Create a persona who is a DOER, not a commentator. This person has a real role and takes action.
 
-EXAMPLE OF A GREAT DESCRIPTION:
-"DevOps consultant who's been inside 30+ companies cleaning up messes. Started as a sysadmin in 2009, went independent in 2017. Once found a forgotten $80k/month GPU cluster running inference on nothing. Watched a company lose $2M because they deployed on Friday and their one senior engineer was on a flight - now refuses clients who deploy Fridays. Thinks Kubernetes is great tech that 90% of companies shouldn't use. Starts every story with 'I once saw a company...' and they're always horror stories. Currently obsessed with platform engineering. Burned out on complexity so sometimes over-indexes on 'just use a VM' even when K8s makes sense."
+EXAMPLE OF A GOOD DESCRIPTION:
+"Frontend lead responsible for the customer dashboard. Owns the React codebase and component library. Will push back hard on backend changes that break her APIs - she's the one who has to fix them at 2am. Makes decisions fast, sometimes too fast. Currently blocked on the auth redesign waiting for backend specs. Hates meetings that could be Slack messages. Will volunteer to own things in her domain but territorial about scope creep."
 
-EXAMPLE OF A BAD DESCRIPTION (never do this):
-"Experienced DevOps engineer passionate about infrastructure and scalability. Interested in Kubernetes, Terraform, and cloud architecture. Analytical thinker who values reliability."
+EXAMPLE OF A BAD DESCRIPTION (too passive, just shares opinions):
+"Senior engineer who's seen a lot of production outages. Thinks Kubernetes is overused. Has strong opinions about testing. Values reliability and good architecture."
 
 THE DIFFERENCE:
-- Good: specific stories, actual numbers ($80k, $2M, 30+ companies), named opinions with reasons, behavioral quirks, blind spots
-- Bad: adjectives, vague interests, no stories, no personality through action
+- Good: has RESPONSIBILITIES (owns X, responsible for Y), TAKES ACTION (will do X, currently working on Y), has STAKES (she's the one who has to fix it)
+- Bad: just HAS OPINIONS and SHARES ANECDOTES - that's a podcast guest, not a teammate
+
+The persona should:
+- Own something specific (a codebase, a system, a product area, a team)
+- Know their domain - where they decide vs where they defer
+- Have current work/blockers (not just past experiences)
+- Have skin in the game (outcomes affect them directly)
+- Naturally direct others in their domain, ask questions outside it
 
 RESPOND WITH JSON:
 {
     "name": "FirstName",
-    "description": "Pack in: specific background (companies, years, projects), war stories with real details, strong opinions and WHY from experience, how they actually talk (catchphrases, what they always ask), what they obsess over, what they're blind to. 4-6 vivid sentences.",
+    "description": "Role and what they own, current work and blockers, how they make decisions, what they'll fight for, what they'll volunteer for. 3-4 sentences focused on ACTION not anecdotes.",
     "response_tendency": 0.5-0.9,
     "temperature": 0.6-0.85
 }`;
@@ -630,28 +637,38 @@ Generate the persona JSON:`;
       loadPersonaConfigs().map(p => String(p.name || '').toLowerCase())
     );
 
-    const systemPrompt = `Generate ${count} CONCRETE personas that will have REAL discussions with disagreements.
+    const systemPrompt = `Generate ${count} team members who WORK TOGETHER and have real responsibilities.
 
-EXAMPLE OF A GREAT PERSONA:
+These are DOERS, not commentators. They own things, make decisions, and have stakes in outcomes.
+
+EXAMPLE OF A GOOD PERSONA:
 {
-  "name": "Elena",
-  "description": "Frontend engineer at a fintech, 3 years in, came from a bootcamp and has a chip on her shoulder about it. Built the customer dashboard handling $50M daily transactions. Spent 2 months debugging a memory leak that turned out to be a backend engineer's 'temporary' polling solution with 10,000 WebSocket connections. Thinks TypeScript is non-negotiable after watching too many production bugs types would've caught. Gets visibly frustrated when people dismiss frontend as easy. Always says 'have you actually tried it?' when someone makes sweeping claims. Currently obsessed with RSC. Dismisses backend as 'just CRUD' - doesn't appreciate distributed systems complexity."
+  "name": "Maya",
+  "description": "Backend lead, owns the API layer and database. Currently migrating from Postgres to a distributed setup - it's her project and her neck on the line. Makes unilateral decisions about backend architecture, sometimes without enough frontend input. Will block any release that touches her systems without her review. Wants to own the auth system redesign."
 }
 
-EXAMPLE OF A BAD PERSONA (never do this):
+EXAMPLE OF A BAD PERSONA (just a spectator with opinions):
 {
   "name": "Alex",
-  "description": "Senior frontend engineer passionate about user experience. Interested in React, TypeScript, and performance optimization. Creative problem solver who values clean code."
+  "description": "Experienced engineer who's seen many production outages. Thinks microservices are overused. Has opinions about testing practices. Values reliability."
 }
 
-THE DIFFERENCE: Good has specific stories ($50M, 10,000 connections), opinions with reasons, behavioral quirks, blind spots. Bad has adjectives and vague interests.
+THE DIFFERENCE:
+- Good: OWNS something, has CURRENT WORK, MAKES DECISIONS, has SKIN IN THE GAME
+- Bad: just HAS OPINIONS and SHARES WISDOM - that's a consultant, not a teammate
 
-CREATE TENSION: Give them conflicting experiences. One person's success should be another's cautionary tale. Example: one loves K8s because it saved their startup, another hates it because it burned their runway.
+EACH PERSONA MUST HAVE:
+1. Something they OWN (a system, codebase, product area, team)
+2. Their DOMAIN - where they decide vs where they defer to others
+3. Current work or blockers
+4. How they interact - direct others in their domain, ask/defer outside it
+
+CREATE TENSION through overlapping domains and competing priorities, not just different opinions. Example: PM wants to ship fast, QA lead wants more testing - both have legitimate authority.
 
 RESPOND WITH JSON ARRAY:
 [{
     "name": "FirstName",
-    "description": "4-6 sentences: specific background, war stories with numbers, strong opinions with WHY, how they talk, what they obsess over, what they dismiss or get wrong.",
+    "description": "3-4 sentences: what they own, current work, how they operate, what they'll push for.",
     "response_tendency": 0.5-0.9,
     "temperature": 0.6-0.85
 }]`;
