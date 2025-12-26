@@ -127,6 +127,18 @@ export class Channel {
   }
 
   /**
+   * Remove a message from the in-memory cache.
+   */
+  removeMessage(messageId: string): boolean {
+    const index = this._messagesCache.findIndex(m => m.id === messageId);
+    if (index !== -1) {
+      this._messagesCache.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Get recent messages formatted as context for agents.
    */
   getContextString(count: number = 20): string {

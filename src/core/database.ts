@@ -393,6 +393,13 @@ export function clearMessages(roomId: string): number {
   return count;
 }
 
+export function deleteMessage(messageId: string): boolean {
+  const db = getDatabase();
+  const stmt = db.prepare('DELETE FROM messages WHERE id = ?');
+  const result = stmt.run(messageId);
+  return result.changes > 0;
+}
+
 export function searchMessages(query: string, roomId?: string, limit: number = 50): MessageRow[] {
   const db = getDatabase();
   if (roomId) {

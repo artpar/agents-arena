@@ -397,6 +397,23 @@ export function createApp(world?: ArenaWorld) {
     }
   });
 
+  app.delete('/api/messages/:messageId', (req: Request, res: Response) => {
+    const { messageId } = req.params;
+    const deleted = db.deleteMessage(messageId);
+
+    // Also remove from in-memory channel
+    const channel = world!.getChannel(world!.defaultChannel);
+    if (channel) {
+      channel.removeMessage(messageId);
+    }
+
+    if (deleted) {
+      res.json({ status: 'ok', deleted: messageId });
+    } else {
+      res.status(404).json({ error: 'Message not found' });
+    }
+  });
+
   // === Database History API ===
 
   app.get('/api/sessions', (req: Request, res: Response) => {

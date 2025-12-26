@@ -20,7 +20,7 @@
     </div>
 </div>
 {% else %}
-<div class="message chat-message {% if message.sender_name == 'Human' %}human-message{% endif %}">
+<div class="message chat-message {% if message.sender_name == 'Human' %}human-message{% endif %}" data-message-id="{{ message.id }}">
     <div class="message-avatar" data-sender="{{ message.sender_name }}">
         {{ message.sender_name | slice(0, 1) | upper }}
     </div>
@@ -28,6 +28,7 @@
         <div class="message-header">
             <span class="message-sender {% if message.sender_name == 'Human' %}human{% endif %}" data-sender="{{ message.sender_name }}">{{ message.sender_name }}</span>
             <span class="message-time">{% if message.timestamp %}{{ message.timestamp | slice(11, 19) }}{% endif %}</span>
+            <button class="message-delete" onclick="deleteMessage('{{ message.id }}')" title="Delete message">&times;</button>
         </div>
         <div class="message-content">{{ message.content }}</div>
     </div>

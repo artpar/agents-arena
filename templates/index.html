@@ -130,27 +130,28 @@
             text-transform: uppercase;
         }
 
-        .human-message .message-avatar {
-            background: #238636;
+        /* Avatar colors are set dynamically via JavaScript */
+
+        /* Message delete button */
+        .message-delete {
+            opacity: 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0 0.25rem;
+            margin-left: auto;
+            transition: opacity 0.15s, color 0.15s;
         }
 
-        /* Generate unique avatar colors based on sender name */
-        .message-avatar[data-sender="Ahmed"] { background: #e91e63; }
-        .message-avatar[data-sender="Brian"] { background: #9c27b0; }
-        .message-avatar[data-sender="Carlos"] { background: #673ab7; }
-        .message-avatar[data-sender="David"] { background: #3f51b5; }
-        .message-avatar[data-sender="Elena"] { background: #2196f3; }
-        .message-avatar[data-sender="Jan"] { background: #00bcd4; }
-        .message-avatar[data-sender="Lisa"] { background: #009688; }
-        .message-avatar[data-sender="Marcus"] { background: #4caf50; }
-        .message-avatar[data-sender="Mikhail"] { background: #ff9800; }
-        .message-avatar[data-sender="Mortimer"] { background: #ff5722; }
-        .message-avatar[data-sender="Nate"] { background: #795548; }
-        .message-avatar[data-sender="Priya"] { background: #607d8b; }
-        .message-avatar[data-sender="Richard"] { background: #f44336; }
-        .message-avatar[data-sender="Sophie"] { background: #e040fb; }
-        .message-avatar[data-sender="Yuki"] { background: #00e5ff; }
-        .message-avatar[data-sender="Human"] { background: #238636; }
+        .chat-message:hover .message-delete {
+            opacity: 1;
+        }
+
+        .message-delete:hover {
+            color: #f85149;
+        }
 
         /* Message body */
         .message-body {
@@ -653,6 +654,46 @@
         senderInput.addEventListener('change', function() {
             localStorage.setItem('arena-sender-name', this.value || 'Human');
         });
+
+        // Generate consistent color from string
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            // Use HSL for nice colors - vary hue, keep saturation and lightness fixed
+            const hue = Math.abs(hash % 360);
+            return `hsl(${hue}, 65%, 45%)`;
+        }
+
+        // Apply avatar colors dynamically
+        function applyAvatarColors() {
+            document.querySelectorAll('.message-avatar[data-sender]').forEach(avatar => {
+                const sender = avatar.getAttribute('data-sender');
+                if (sender) {
+                    avatar.style.backgroundColor = stringToColor(sender);
+                }
+            });
+        }
+
+        // Delete a message
+        async function deleteMessage(messageId) {
+            if (!messageId) return;
+            try {
+                const response = await fetch(`/api/messages/${messageId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    const el = document.querySelector(`[data-message-id="${messageId}"]`);
+                    if (el) el.remove();
+                }
+            } catch (err) {
+                console.error('Failed to delete message:', err);
+            }
+        }
+
+        // Apply colors on load and after HTMX swaps
+        document.addEventListener('DOMContentLoaded', applyAvatarColors);
+        document.body.addEventListener('htmx:afterSwap', applyAvatarColors);
+        document.body.addEventListener('htmx:wsAfterMessage', applyAvatarColors);
 
         // Auto-scroll messages
         const messagesDiv = document.getElementById('messages');
