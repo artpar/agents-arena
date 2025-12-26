@@ -285,6 +285,12 @@
             font-size: 1rem;
         }
 
+        .input-area input[name="sender"] {
+            flex: 0 0 120px;
+            text-align: center;
+            font-weight: 500;
+        }
+
         .input-area input:focus {
             outline: none;
             border-color: var(--accent);
@@ -572,8 +578,8 @@
             <div class="typing-indicator" id="typing-indicator"></div>
 
             <div class="input-area">
-                <form hx-post="/send" hx-swap="none" hx-on::after-request="this.reset()">
-                    <input type="hidden" name="sender" value="Human">
+                <form hx-post="/send" hx-swap="none" hx-on::after-request="document.querySelector('input[name=content]').value = ''">
+                    <input type="text" name="sender" id="sender-name" placeholder="Name" value="Human">
                     <input type="text" name="content" placeholder="Type a message..." autocomplete="off" autofocus>
                     <button type="submit">Send</button>
                 </form>
@@ -638,6 +644,16 @@
     </main>
 
     <script>
+        // Sender name persistence
+        const senderInput = document.getElementById('sender-name');
+        const savedName = localStorage.getItem('arena-sender-name');
+        if (savedName) {
+            senderInput.value = savedName;
+        }
+        senderInput.addEventListener('change', function() {
+            localStorage.setItem('arena-sender-name', this.value || 'Human');
+        });
+
         // Auto-scroll messages
         const messagesDiv = document.getElementById('messages');
         const typingIndicator = document.getElementById('typing-indicator');
