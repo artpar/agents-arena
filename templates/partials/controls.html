@@ -8,4 +8,5 @@
     <option value="turn_based" {% if status.mode == 'turn_based' %}selected{% endif %}>Turn-based</option>
     <option value="async" {% if status.mode == 'async' %}selected{% endif %}>Async</option>
 </select>
+<label for="max-turns" style="margin-left: 0.5rem;">Turns:</label>
 <input type="number" id="max-turns" name="maxTurns" value="{{ status.max_turns or 20 }}" min="1" max="100" title="Max turns" style="width: 50px;">
