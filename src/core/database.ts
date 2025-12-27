@@ -118,6 +118,29 @@ function createTables(db: Database.Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: Add missing columns to agents table
+  const agentColumns = [
+    { name: 'description', sql: "ALTER TABLE agents ADD COLUMN description TEXT DEFAULT ''" },
+    { name: 'system_prompt', sql: "ALTER TABLE agents ADD COLUMN system_prompt TEXT DEFAULT ''" },
+    { name: 'personality_traits', sql: "ALTER TABLE agents ADD COLUMN personality_traits TEXT DEFAULT '{}'" },
+    { name: 'speaking_style', sql: "ALTER TABLE agents ADD COLUMN speaking_style TEXT DEFAULT ''" },
+    { name: 'interests', sql: "ALTER TABLE agents ADD COLUMN interests TEXT DEFAULT '[]'" },
+    { name: 'response_tendency', sql: "ALTER TABLE agents ADD COLUMN response_tendency REAL DEFAULT 0.5" },
+    { name: 'temperature', sql: "ALTER TABLE agents ADD COLUMN temperature REAL DEFAULT 0.7" },
+    { name: 'model', sql: "ALTER TABLE agents ADD COLUMN model TEXT DEFAULT 'claude-haiku-4-5-20251001'" },
+    { name: 'status', sql: "ALTER TABLE agents ADD COLUMN status TEXT DEFAULT 'offline'" },
+    { name: 'message_count', sql: "ALTER TABLE agents ADD COLUMN message_count INTEGER DEFAULT 0" },
+    { name: 'last_spoke_at', sql: "ALTER TABLE agents ADD COLUMN last_spoke_at TEXT" },
+  ];
+
+  for (const col of agentColumns) {
+    try {
+      db.exec(col.sql);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+  }
+
   // Sessions table (simulation runs)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -229,6 +252,7 @@ export function deleteRoom(roomId: string): void {
 export interface AgentRow {
   id: string;
   name: string;
+  config: string;  // JSON blob with full agent config
   description: string;
   system_prompt: string;
   personality_traits: string;
@@ -257,11 +281,26 @@ export function upsertAgent(agent: {
   model?: string;
 }): AgentRow {
   const db = getDatabase();
+
+  // Build config JSON blob for the database
+  const config = JSON.stringify({
+    name: agent.name,
+    description: agent.description || '',
+    system_prompt: agent.system_prompt || '',
+    personality_traits: agent.personality_traits || {},
+    speaking_style: agent.speaking_style || '',
+    interests: agent.interests || [],
+    response_tendency: agent.response_tendency ?? 0.5,
+    temperature: agent.temperature ?? 0.7,
+    model: agent.model || 'claude-haiku-4-5-20251001'
+  });
+
   const stmt = db.prepare(`
-    INSERT INTO agents (id, name, description, system_prompt, personality_traits, speaking_style, interests, response_tendency, temperature, model)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO agents (id, name, config, description, system_prompt, personality_traits, speaking_style, interests, response_tendency, temperature, model)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
+      config = excluded.config,
       description = excluded.description,
       system_prompt = excluded.system_prompt,
       personality_traits = excluded.personality_traits,
@@ -270,12 +309,13 @@ export function upsertAgent(agent: {
       response_tendency = excluded.response_tendency,
       temperature = excluded.temperature,
       model = excluded.model,
-      updated_at = datetime('now')
+      updated_at = strftime('%s', 'now') * 1000
     RETURNING *
   `);
   return stmt.get(
     agent.id,
     agent.name,
+    config,
     agent.description || '',
     agent.system_prompt || '',
     JSON.stringify(agent.personality_traits || {}),

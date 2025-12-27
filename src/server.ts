@@ -53,6 +53,13 @@ import {
   ChatMessage
 } from './values/message.js';
 import { RoomId, AgentId, generateRoomId, generateAgentId } from './values/ids.js';
+import {
+  getAllAgents as getDbAgents,
+  getAgent as getDbAgent,
+  upsertAgent,
+  deleteAgent as deleteDbAgent,
+  AgentRow
+} from './core/database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -515,16 +522,254 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     }
   });
 
+  // ============================================================================
+  // PERSONA MANAGEMENT API
+  // ============================================================================
+
+  // Helper to format DB agent row for template
+  function formatPersona(row: AgentRow) {
+    // Parse config blob as fallback for older records
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(row.config || '{}');
+    } catch {
+      config = {};
+    }
+
+    return {
+      _filename: row.id,  // Template uses _filename as identifier
+      id: row.id,
+      name: row.name || config.name as string || 'Unknown',
+      description: row.description || config.description as string || '',
+      system_prompt: row.system_prompt || config.system_prompt as string || '',
+      personality_traits: JSON.parse(row.personality_traits || '{}') || config.personality_traits || {},
+      speaking_style: row.speaking_style || config.speaking_style as string || '',
+      interests: JSON.parse(row.interests || '[]') || config.interests || [],
+      response_tendency: row.response_tendency ?? config.response_tendency as number ?? 0.5,
+      temperature: row.temperature ?? config.temperature as number ?? 0.7,
+      model: row.model || config.model as string || 'haiku',
+      status: row.status || 'offline',
+      message_count: row.message_count || 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    };
+  }
+
   // Personas page
   app.get('/personas', (req: Request, res: Response) => {
+    const personas = getDbAgents().map(formatPersona);
     res.render('personas.html', {
-      personas: getAgents(runtime),
+      personas,
       active_agents: getAgents(runtime)
     });
   });
 
+  // List all personas
   app.get('/api/personas', (req: Request, res: Response) => {
-    res.json(getAgents(runtime));
+    const personas = getDbAgents().map(formatPersona);
+    res.json(personas);
+  });
+
+  // Get single persona
+  app.get('/api/personas/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const agent = getDbAgent(id);
+    if (agent) {
+      res.json(formatPersona(agent));
+    } else {
+      res.status(404).json({ error: 'Persona not found' });
+    }
+  });
+
+  // Create new persona
+  app.post('/api/personas', (req: Request, res: Response) => {
+    const data = req.body;
+    const id = generateAgentId();
+
+    const agent = upsertAgent({
+      id,
+      name: data.name,
+      description: data.description || '',
+      system_prompt: data.system_prompt || '',
+      personality_traits: data.personality_traits || {},
+      speaking_style: data.speaking_style || '',
+      interests: data.interests || [],
+      response_tendency: data.response_tendency ?? 0.5,
+      temperature: data.temperature ?? 0.7,
+      model: data.model || 'haiku'
+    });
+
+    res.json({ ...formatPersona(agent), status: 'created' });
+  });
+
+  // Update existing persona
+  app.put('/api/personas/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const data = req.body;
+
+    const existing = getDbAgent(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Persona not found' });
+      return;
+    }
+
+    const agent = upsertAgent({
+      id,
+      name: data.name || existing.name,
+      description: data.description ?? existing.description,
+      system_prompt: data.system_prompt ?? existing.system_prompt,
+      personality_traits: data.personality_traits ?? JSON.parse(existing.personality_traits || '{}'),
+      speaking_style: data.speaking_style ?? existing.speaking_style,
+      interests: data.interests ?? JSON.parse(existing.interests || '[]'),
+      response_tendency: data.response_tendency ?? existing.response_tendency,
+      temperature: data.temperature ?? existing.temperature,
+      model: data.model ?? existing.model
+    });
+
+    res.json({ ...formatPersona(agent), status: 'updated' });
+  });
+
+  // Delete single persona
+  app.delete('/api/personas/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const existing = getDbAgent(id);
+
+    if (!existing) {
+      res.status(404).json({ error: 'Persona not found' });
+      return;
+    }
+
+    deleteDbAgent(id);
+    res.json({ status: 'deleted', id });
+  });
+
+  // Bulk delete personas
+  app.post('/api/personas/bulk-delete', (req: Request, res: Response) => {
+    const { filenames } = req.body as { filenames: string[] };
+    const deleted: string[] = [];
+
+    for (const id of filenames) {
+      const existing = getDbAgent(id);
+      if (existing) {
+        deleteDbAgent(id);
+        deleted.push(id);
+      }
+    }
+
+    res.json({ status: 'deleted', deleted });
+  });
+
+  // Generate persona using AI
+  app.post('/api/personas/generate', async (req: Request, res: Response) => {
+    const { prompt } = req.body as { prompt: string };
+
+    if (!prompt) {
+      res.status(400).json({ detail: 'Prompt is required' });
+      return;
+    }
+
+    const systemPrompt = `You are a persona generator. Given a description, create a detailed persona for a chat agent.
+Return a JSON object with these fields:
+- name: A creative name for the persona
+- description: A brief description (1-2 sentences)
+- speaking_style: How they communicate (e.g., "Formal and precise", "Casual with slang")
+- personality_traits: Object with keys curiosity, assertiveness, humor, empathy, skepticism, creativity (values 0-1)
+- interests: Array of 3-5 interests/topics
+- response_tendency: Float 0-1 (0=quiet, 1=talkative)
+- temperature: Float 0-1 for creativity
+- model: "haiku" (default)
+
+Return ONLY valid JSON, no markdown.`;
+
+    try {
+      const response = await runtime.anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          { role: 'user', content: `Create a persona based on: ${prompt}` }
+        ],
+        system: systemPrompt
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response type');
+      }
+
+      const persona = JSON.parse(content.text);
+      res.json(persona);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Generation failed';
+      res.status(500).json({ detail: msg });
+    }
+  });
+
+  // Generate team of personas
+  app.post('/api/personas/generate-team', async (req: Request, res: Response) => {
+    const { description, count = 5 } = req.body as { description: string; count?: number };
+
+    if (!description) {
+      res.status(400).json({ detail: 'Description is required' });
+      return;
+    }
+
+    const teamCount = Math.min(Math.max(count, 2), 15);
+
+    const systemPrompt = `You are a team persona generator. Given a team description, create ${teamCount} distinct personas.
+Return a JSON array of objects, each with:
+- name: A creative name
+- description: Brief description (1-2 sentences)
+- speaking_style: How they communicate
+- personality_traits: Object with curiosity, assertiveness, humor, empathy, skepticism, creativity (0-1)
+- interests: Array of 3-5 interests
+- response_tendency: Float 0-1
+- temperature: Float 0-1
+- model: "haiku"
+
+Make each persona unique with different personalities and roles appropriate to the team.
+Return ONLY valid JSON array, no markdown.`;
+
+    try {
+      const response = await runtime.anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        messages: [
+          { role: 'user', content: `Create a team based on: ${description}` }
+        ],
+        system: systemPrompt
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response type');
+      }
+
+      const personas = JSON.parse(content.text);
+
+      // Save all personas to database
+      const saved = [];
+      for (const p of personas) {
+        const id = generateAgentId();
+        const agent = upsertAgent({
+          id,
+          name: p.name,
+          description: p.description || '',
+          system_prompt: p.system_prompt || '',
+          personality_traits: p.personality_traits || {},
+          speaking_style: p.speaking_style || '',
+          interests: p.interests || [],
+          response_tendency: p.response_tendency ?? 0.5,
+          temperature: p.temperature ?? 0.7,
+          model: p.model || 'haiku'
+        });
+        saved.push(formatPersona(agent));
+      }
+
+      res.json({ count: saved.length, personas: saved });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Team generation failed';
+      res.status(500).json({ detail: msg });
+    }
   });
 
   // ============================================================================

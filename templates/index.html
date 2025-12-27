@@ -1020,28 +1020,7 @@
 
             <div class="sidebar-section agents-section" id="agents-panel">
                 <h2>Agents ({{ agents|length }})</h2>
-                <div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s">
-                    <ul class="agent-list">
-                        {% for agent in agents %}
-                        <li>
-                            <span class="agent-name">
-                                <span class="status-dot {{ agent.status }}"></span>
-                                {{ agent.name }}
-                            </span>
-                            <span class="agent-actions">
-                                <button class="step-btn"
-                                        hx-post="/agents/{{ agent.id }}/step"
-                                        hx-swap="none">▶</button>
-                                <button class="remove-btn"
-                                        hx-delete="/agents/{{ agent.id }}"
-                                        hx-confirm="Remove {{ agent.name }}?"
-                                        hx-target="#agents-list"
-                                        hx-swap="outerHTML">×</button>
-                            </span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
+                {% include "partials/agents.html" %}
 
                 <div class="add-agent-form">
                     <form hx-post="/agents/add" hx-target="#agents-list" hx-swap="outerHTML">
