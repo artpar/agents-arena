@@ -1174,11 +1174,13 @@
             // Check if it's a JSON typing indicator
             try {
                 const data = JSON.parse(message);
-                if (data.type === 'typing') {
-                    if (data.thinking) {
-                        typingAgents.add(data.agent_name);
+                if (data.type === 'typing' || data.type === 'agent_typing') {
+                    const agentName = data.agent_name || data.agentName;
+                    const isTyping = data.thinking ?? data.isTyping;
+                    if (isTyping) {
+                        typingAgents.add(agentName);
                     } else {
-                        typingAgents.delete(data.agent_name);
+                        typingAgents.delete(agentName);
                     }
                     updateTypingIndicator();
                     return;

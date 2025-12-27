@@ -464,12 +464,18 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   // Projects API
   app.get('/api/projects', (req: Request, res: Response) => {
     try {
-      const stmt = runtime.database.db.prepare(`
+      const projectStmt = runtime.database.db.prepare(`
         SELECT id, name, goal, room_id, phase, state, created_at, updated_at
         FROM projects
         ORDER BY updated_at DESC
       `);
-      const rows = stmt.all() as Array<{
+      const taskStmt = runtime.database.db.prepare(`
+        SELECT id, title, description, status, assignee_id, assignee_name
+        FROM tasks WHERE project_id = ?
+        ORDER BY created_at ASC
+      `);
+
+      const rows = projectStmt.all() as Array<{
         id: string;
         name: string;
         goal: string;
@@ -479,16 +485,36 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
         created_at: number;
         updated_at: number;
       }>;
-      res.json(rows.map(row => ({
-        id: row.id,
-        name: row.name,
-        goal: row.goal,
-        room_id: row.room_id,
-        phase: row.phase,
-        state: JSON.parse(row.state || '{}'),
-        created_at: row.created_at,
-        updated_at: row.updated_at
-      })));
+
+      res.json(rows.map(row => {
+        const tasks = taskStmt.all(row.id) as Array<{
+          id: string;
+          title: string;
+          description: string;
+          status: string;
+          assignee_id: string | null;
+          assignee_name: string | null;
+        }>;
+
+        return {
+          id: row.id,
+          name: row.name,
+          goal: row.goal,
+          room_id: row.room_id,
+          phase: row.phase,
+          state: JSON.parse(row.state || '{}'),
+          tasks: tasks.map(t => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            assigneeId: t.assignee_id,
+            assigneeName: t.assignee_name
+          })),
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        };
+      }));
     } catch {
       res.json([]);
     }
@@ -520,6 +546,72 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     } else {
       res.status(404).json({ error: 'Project not found' });
     }
+  });
+
+  // Add task to project
+  app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const { title, description = '' } = req.body;
+
+    if (!title) {
+      res.status(400).json({ error: 'Title required' });
+      return;
+    }
+
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const stmt = runtime.database.db.prepare(`
+      INSERT INTO tasks (id, project_id, title, description, task_data)
+      VALUES (?, ?, ?, ?, '{}')
+    `);
+    stmt.run(taskId, projectId, title, description);
+
+    res.json({ id: taskId, project_id: projectId, title, description, status: 'unassigned' });
+  });
+
+  // Assign task to agent
+  app.post('/api/projects/:projectId/tasks/:taskId/assign', (req: Request, res: Response) => {
+    const { taskId } = req.params;
+    const { agentId, agentName } = req.body;
+
+    if (!agentId) {
+      res.status(400).json({ error: 'Agent ID required' });
+      return;
+    }
+
+    const stmt = runtime.database.db.prepare(`
+      UPDATE tasks SET assignee_id = ?, assignee_name = ?, status = 'assigned',
+        updated_at = strftime('%s', 'now') * 1000
+      WHERE id = ?
+    `);
+    const result = stmt.run(agentId, agentName || agentId, taskId);
+
+    if (result.changes > 0) {
+      res.json({ status: 'assigned', taskId, agentId });
+    } else {
+      res.status(404).json({ error: 'Task not found' });
+    }
+  });
+
+  // Advance project phase
+  app.post('/api/projects/:projectId/advance', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+
+    const phases = ['planning', 'building', 'reviewing', 'done'];
+    const project = runtime.database.db.prepare('SELECT phase FROM projects WHERE id = ?').get(projectId) as { phase: string } | undefined;
+
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const currentIndex = phases.indexOf(project.phase);
+    const nextPhase = phases[Math.min(currentIndex + 1, phases.length - 1)];
+
+    runtime.database.db.prepare(`
+      UPDATE projects SET phase = ?, updated_at = strftime('%s', 'now') * 1000 WHERE id = ?
+    `).run(nextPhase, projectId);
+
+    res.json({ projectId, phase: nextPhase });
   });
 
   // ============================================================================
