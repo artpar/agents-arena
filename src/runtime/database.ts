@@ -24,7 +24,8 @@ import {
   DbLoadRoom,
   DbSaveProject,
   DbSaveTask,
-  DbUpdateTask
+  DbUpdateTask,
+  DbLogEvent
 } from '../effects/database.js';
 import { ChatMessage, createChatMessage } from '../values/message.js';
 import { AgentConfig, createAgentConfig } from '../values/agent.js';
@@ -140,6 +141,19 @@ function initializeSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+    -- Event log table for tool_use, tool_result, and other events
+    CREATE TABLE IF NOT EXISTS event_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      event_type TEXT NOT NULL,
+      event_data TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_event_log_session ON event_log(session_id);
+    CREATE INDEX IF NOT EXISTS idx_event_log_type ON event_log(event_type);
+    CREATE INDEX IF NOT EXISTS idx_event_log_created ON event_log(created_at);
   `);
 }
 
@@ -229,6 +243,9 @@ async function executeDbEffect(
 
     case 'DB_UPDATE_TASK':
       return updateTask(conn, effect);
+
+    case 'DB_LOG_EVENT':
+      return logEvent(conn, effect);
 
     default:
       const _exhaustive: never = effect;
@@ -468,6 +485,21 @@ function updateTask(conn: DatabaseConnection, effect: DbUpdateTask): void {
     Date.now(),
     task.id,
     pid
+  );
+}
+
+function logEvent(conn: DatabaseConnection, effect: DbLogEvent): void {
+  const { eventType, eventData, sessionId } = effect;
+
+  const stmt = conn.db.prepare(`
+    INSERT INTO event_log (session_id, event_type, event_data)
+    VALUES (?, ?, ?)
+  `);
+
+  stmt.run(
+    sessionId ?? null,
+    eventType,
+    JSON.stringify(eventData)
   );
 }
 

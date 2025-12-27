@@ -31,13 +31,13 @@ import {
 } from '../effects/tools.js';
 import {
   broadcastToRoom,
-  broadcastToAll,
   agentTyping,
   agentStatus as agentStatusEvent,
-  buildProgress,
-  toolUse as toolUseEvent,
-  toolResult as toolResultEvent
+  buildProgress
 } from '../effects/broadcast.js';
+import {
+  dbLogEvent
+} from '../effects/database.js';
 import {
   sendToRoom,
   ActorMessage
@@ -470,12 +470,19 @@ function handleToolCallsNeeded(
     executeTool(tool.id, tool.name, tool.input, context, replyTag)
   );
 
-  // Broadcast tool_use events for each tool
-  const toolUseBroadcasts = toolUses.map(tool =>
-    broadcastToAll(toolUseEvent(agentId, agentName, tool.name, tool.id, tool.input))
+  // Log tool_use events to database
+  const toolUseLogEffects = toolUses.map(tool =>
+    dbLogEvent('tool_use', {
+      agent_id: agentId,
+      agent_name: agentName,
+      tool_name: tool.name,
+      tool_use_id: tool.id,
+      tool_input: tool.input,
+      room_id: roomId
+    })
   );
 
-  // Effects: broadcast status, tool use events, execute tools
+  // Effects: broadcast status, log tool events to DB, execute tools
   const effects: Effect[] = [
     broadcastToRoom(roomId, agentStatusEvent(agentId, agentName, 'building')),
     broadcastToRoom(roomId, buildProgress(
@@ -485,7 +492,7 @@ function handleToolCallsNeeded(
       state.maxToolCalls,
       toolUses[0]?.name ?? 'unknown'
     )),
-    ...toolUseBroadcasts,
+    ...toolUseLogEffects,
     ...toolEffects
   ];
 
@@ -548,16 +555,17 @@ function handleToolResult(
 
   const toolResultMessage = buildToolResultMessage(toolResults);
 
-  // Broadcast tool_result events for each result
-  const toolResultBroadcasts = results.map(r =>
-    broadcastToAll(toolResultEvent(
-      agentId,
-      agentName,
-      r.toolName,
-      r.toolUseId,
-      r.result.substring(0, 500), // Truncate long results for UI
-      r.isError
-    ))
+  // Log tool_result events to database
+  const toolResultLogEffects = results.map(r =>
+    dbLogEvent('tool_result', {
+      agent_id: agentId,
+      agent_name: agentName,
+      tool_name: r.toolName,
+      tool_use_id: r.toolUseId,
+      result_length: r.result.length,
+      is_error: r.isError,
+      room_id: roomId
+    })
   );
 
   // Add any artifacts
@@ -594,9 +602,9 @@ function handleToolResult(
     })
   });
 
-  // Continue the API conversation with tool result broadcasts
+  // Continue the API conversation with tool result logging
   const effects: Effect[] = [
-    ...toolResultBroadcasts,
+    ...toolResultLogEffects,
     callAnthropic(state.config.id, request, replyTag)
   ];
 

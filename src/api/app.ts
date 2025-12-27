@@ -145,27 +145,8 @@ export function createApp(world?: ArenaWorld) {
     }));
   });
 
-  // Subscribe to tool events for timeline display
-  world.eventBus.subscribe('tool_use', (event: Event) => {
-    const data = event.data as { agentId: string; agentName: string; toolName: string; input: unknown };
-    manager.broadcast(JSON.stringify({
-      type: 'tool_use',
-      agent_name: data.agentName,
-      tool_name: data.toolName,
-      input: data.input
-    }));
-  });
-
-  world.eventBus.subscribe('tool_result', (event: Event) => {
-    const data = event.data as { agentId: string; agentName: string; toolName: string; result: string; isError: boolean };
-    manager.broadcast(JSON.stringify({
-      type: 'tool_result',
-      agent_name: data.agentName,
-      tool_name: data.toolName,
-      result: data.result,
-      is_error: data.isError
-    }));
-  });
+  // Note: Tool events (tool_use, tool_result) are stored in database.
+  // The UI fetches them via the /messages endpoint which merges messages with tool events.
 
   // === HTML Routes ===
 

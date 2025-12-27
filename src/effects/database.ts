@@ -232,6 +232,34 @@ export function dbUpdateTask(task: Task): DbUpdateTask {
 }
 
 // ============================================================================
+// EVENT LOG EFFECTS
+// ============================================================================
+
+/**
+ * Log an event to the database event_log table.
+ * Used for tool_use, tool_result, and other trackable events.
+ */
+export interface DbLogEvent {
+  readonly type: 'DB_LOG_EVENT';
+  readonly eventType: string;
+  readonly eventData: Record<string, unknown>;
+  readonly sessionId?: string;
+}
+
+export function dbLogEvent(
+  eventType: string,
+  eventData: Record<string, unknown>,
+  sessionId?: string
+): DbLogEvent {
+  return Object.freeze({
+    type: 'DB_LOG_EVENT',
+    eventType,
+    eventData,
+    sessionId
+  });
+}
+
+// ============================================================================
 // DATABASE EFFECT UNION
 // ============================================================================
 
@@ -247,7 +275,8 @@ export type DatabaseEffect =
   | DbLoadRoom
   | DbSaveProject
   | DbSaveTask
-  | DbUpdateTask;
+  | DbUpdateTask
+  | DbLogEvent;
 
 /**
  * Type guard for database effects.

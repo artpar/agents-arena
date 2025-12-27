@@ -201,6 +201,8 @@ export function createRuntimeContext(config: RuntimeConfig): RuntimeContext {
   });
 
   // Create tools executor with callback to route results back to agents
+  // This routes tool execution results back to agents so they can continue the conversation.
+  // Tool visibility for UI is handled separately via database logging in the agent interpreter.
   const toolsExecutor = createToolsExecutor(tools, logger, (agentId, roomId, results, replyTag) => {
     if (actorsRef) {
       logger.debug('Routing tool results to agent', { agentId, replyTag, resultCount: results.length });
