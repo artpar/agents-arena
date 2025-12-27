@@ -659,7 +659,38 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     res.json({ status: 'deleted', deleted });
   });
 
-  // Generate persona using AI
+  // Tool schemas for persona generation
+  const personaTool = {
+    name: 'create_persona',
+    description: 'Create a persona with the given attributes',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'A creative name for the persona' },
+        description: { type: 'string', description: 'Brief description (1-2 sentences)' },
+        speaking_style: { type: 'string', description: 'How they communicate' },
+        personality_traits: {
+          type: 'object',
+          properties: {
+            curiosity: { type: 'number', minimum: 0, maximum: 1 },
+            assertiveness: { type: 'number', minimum: 0, maximum: 1 },
+            humor: { type: 'number', minimum: 0, maximum: 1 },
+            empathy: { type: 'number', minimum: 0, maximum: 1 },
+            skepticism: { type: 'number', minimum: 0, maximum: 1 },
+            creativity: { type: 'number', minimum: 0, maximum: 1 }
+          },
+          required: ['curiosity', 'assertiveness', 'humor', 'empathy', 'skepticism', 'creativity']
+        },
+        interests: { type: 'array', items: { type: 'string' }, description: '3-5 interests/topics' },
+        response_tendency: { type: 'number', minimum: 0, maximum: 1, description: '0=quiet, 1=talkative' },
+        temperature: { type: 'number', minimum: 0, maximum: 1, description: 'Creativity level' },
+        model: { type: 'string', enum: ['haiku', 'sonnet', 'opus'] }
+      },
+      required: ['name', 'description', 'speaking_style', 'personality_traits', 'interests', 'response_tendency', 'temperature', 'model']
+    }
+  };
+
+  // Generate persona using AI with tool calling
   app.post('/api/personas/generate', async (req: Request, res: Response) => {
     const { prompt } = req.body as { prompt: string };
 
@@ -668,19 +699,6 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       return;
     }
 
-    const systemPrompt = `You are a persona generator. Given a description, create a detailed persona for a chat agent.
-Return a JSON object with these fields:
-- name: A creative name for the persona
-- description: A brief description (1-2 sentences)
-- speaking_style: How they communicate (e.g., "Formal and precise", "Casual with slang")
-- personality_traits: Object with keys curiosity, assertiveness, humor, empathy, skepticism, creativity (values 0-1)
-- interests: Array of 3-5 interests/topics
-- response_tendency: Float 0-1 (0=quiet, 1=talkative)
-- temperature: Float 0-1 for creativity
-- model: "haiku" (default)
-
-Return ONLY valid JSON, no markdown.`;
-
     try {
       const response = await runtime.anthropic.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -688,23 +706,62 @@ Return ONLY valid JSON, no markdown.`;
         messages: [
           { role: 'user', content: `Create a persona based on: ${prompt}` }
         ],
-        system: systemPrompt
+        tools: [personaTool],
+        tool_choice: { type: 'tool', name: 'create_persona' }
       });
 
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response type');
+      const toolUse = response.content.find(c => c.type === 'tool_use');
+      if (!toolUse || toolUse.type !== 'tool_use') {
+        throw new Error('No tool response');
       }
 
-      const persona = JSON.parse(content.text);
-      res.json(persona);
+      res.json(toolUse.input);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Generation failed';
       res.status(500).json({ detail: msg });
     }
   });
 
-  // Generate team of personas
+  // Tool schema for team generation
+  const teamTool = {
+    name: 'create_team',
+    description: 'Create a team of personas',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        personas: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              speaking_style: { type: 'string' },
+              personality_traits: {
+                type: 'object',
+                properties: {
+                  curiosity: { type: 'number' },
+                  assertiveness: { type: 'number' },
+                  humor: { type: 'number' },
+                  empathy: { type: 'number' },
+                  skepticism: { type: 'number' },
+                  creativity: { type: 'number' }
+                }
+              },
+              interests: { type: 'array', items: { type: 'string' } },
+              response_tendency: { type: 'number' },
+              temperature: { type: 'number' },
+              model: { type: 'string' }
+            },
+            required: ['name', 'description', 'speaking_style', 'personality_traits', 'interests']
+          }
+        }
+      },
+      required: ['personas']
+    }
+  };
+
+  // Generate team of personas using tool calling
   app.post('/api/personas/generate-team', async (req: Request, res: Response) => {
     const { description, count = 5 } = req.body as { description: string; count?: number };
 
@@ -715,36 +772,23 @@ Return ONLY valid JSON, no markdown.`;
 
     const teamCount = Math.min(Math.max(count, 2), 15);
 
-    const systemPrompt = `You are a team persona generator. Given a team description, create ${teamCount} distinct personas.
-Return a JSON array of objects, each with:
-- name: A creative name
-- description: Brief description (1-2 sentences)
-- speaking_style: How they communicate
-- personality_traits: Object with curiosity, assertiveness, humor, empathy, skepticism, creativity (0-1)
-- interests: Array of 3-5 interests
-- response_tendency: Float 0-1
-- temperature: Float 0-1
-- model: "haiku"
-
-Make each persona unique with different personalities and roles appropriate to the team.
-Return ONLY valid JSON array, no markdown.`;
-
     try {
       const response = await runtime.anthropic.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 4096,
         messages: [
-          { role: 'user', content: `Create a team based on: ${description}` }
+          { role: 'user', content: `Create ${teamCount} unique personas for a team: ${description}. Make each persona distinct with different personalities and roles.` }
         ],
-        system: systemPrompt
+        tools: [teamTool],
+        tool_choice: { type: 'tool', name: 'create_team' }
       });
 
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response type');
+      const toolUse = response.content.find(c => c.type === 'tool_use');
+      if (!toolUse || toolUse.type !== 'tool_use') {
+        throw new Error('No tool response');
       }
 
-      const personas = JSON.parse(content.text);
+      const { personas } = toolUse.input as { personas: Array<Record<string, unknown>> };
 
       // Save all personas to database
       const saved = [];
@@ -752,15 +796,15 @@ Return ONLY valid JSON array, no markdown.`;
         const id = generateAgentId();
         const agent = upsertAgent({
           id,
-          name: p.name,
-          description: p.description || '',
-          system_prompt: p.system_prompt || '',
-          personality_traits: p.personality_traits || {},
-          speaking_style: p.speaking_style || '',
-          interests: p.interests || [],
-          response_tendency: p.response_tendency ?? 0.5,
-          temperature: p.temperature ?? 0.7,
-          model: p.model || 'haiku'
+          name: String(p.name || 'Unknown'),
+          description: String(p.description || ''),
+          system_prompt: '',
+          personality_traits: (p.personality_traits as Record<string, number>) || {},
+          speaking_style: String(p.speaking_style || ''),
+          interests: (p.interests as string[]) || [],
+          response_tendency: Number(p.response_tendency) || 0.5,
+          temperature: Number(p.temperature) || 0.7,
+          model: String(p.model || 'haiku')
         });
         saved.push(formatPersona(agent));
       }
