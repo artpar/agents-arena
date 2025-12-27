@@ -174,7 +174,6 @@ export function createRuntimeContext(config: RuntimeConfig): RuntimeContext {
 
   // Create executors
   const databaseExecutor = createDatabaseExecutor(database, logger);
-  const toolsExecutor = createToolsExecutor(tools, logger);
   const broadcastExecutor = createBroadcastExecutor(broadcast, logger);
 
   // Create actor runtime config
@@ -198,6 +197,21 @@ export function createRuntimeContext(config: RuntimeConfig): RuntimeContext {
       });
     } else {
       logger.error('Actor runtime not initialized when API response received');
+    }
+  });
+
+  // Create tools executor with callback to route results back to agents
+  const toolsExecutor = createToolsExecutor(tools, logger, (agentId, roomId, results, replyTag) => {
+    if (actorsRef) {
+      logger.debug('Routing tool results to agent', { agentId, replyTag, resultCount: results.length });
+      actorsRef.send(agentAddress(agentId as AgentId), {
+        type: 'TOOL_RESULT',
+        results,
+        roomId,
+        replyTag
+      });
+    } else {
+      logger.error('Actor runtime not initialized when tool results received');
     }
   });
 

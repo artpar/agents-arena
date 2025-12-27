@@ -31,9 +31,12 @@ import {
 } from '../effects/tools.js';
 import {
   broadcastToRoom,
+  broadcastToAll,
   agentTyping,
   agentStatus as agentStatusEvent,
-  buildProgress
+  buildProgress,
+  toolUse as toolUseEvent,
+  toolResult as toolResultEvent
 } from '../effects/broadcast.js';
 import {
   sendToRoom,
@@ -467,7 +470,12 @@ function handleToolCallsNeeded(
     executeTool(tool.id, tool.name, tool.input, context, replyTag)
   );
 
-  // Effects: broadcast status, execute tools
+  // Broadcast tool_use events for each tool
+  const toolUseBroadcasts = toolUses.map(tool =>
+    broadcastToAll(toolUseEvent(agentId, agentName, tool.name, tool.id, tool.input))
+  );
+
+  // Effects: broadcast status, tool use events, execute tools
   const effects: Effect[] = [
     broadcastToRoom(roomId, agentStatusEvent(agentId, agentName, 'building')),
     broadcastToRoom(roomId, buildProgress(
@@ -477,6 +485,7 @@ function handleToolCallsNeeded(
       state.maxToolCalls,
       toolUses[0]?.name ?? 'unknown'
     )),
+    ...toolUseBroadcasts,
     ...toolEffects
   ];
 
@@ -521,6 +530,8 @@ function handleToolResult(
   msg: ToolResultMsg
 ): readonly [AgentInterpreterState, readonly Effect[]] {
   const { results, roomId } = msg;
+  const agentId = state.config.id;
+  const agentName = state.config.name;
 
   if (!state.pendingApiCall) {
     return noChange(state);
@@ -536,6 +547,18 @@ function handleToolResult(
   );
 
   const toolResultMessage = buildToolResultMessage(toolResults);
+
+  // Broadcast tool_result events for each result
+  const toolResultBroadcasts = results.map(r =>
+    broadcastToAll(toolResultEvent(
+      agentId,
+      agentName,
+      r.toolName,
+      r.toolUseId,
+      r.result.substring(0, 500), // Truncate long results for UI
+      r.isError
+    ))
+  );
 
   // Add any artifacts
   let newArtifacts = state.artifacts;
@@ -571,8 +594,9 @@ function handleToolResult(
     })
   });
 
-  // Continue the API conversation
+  // Continue the API conversation with tool result broadcasts
   const effects: Effect[] = [
+    ...toolResultBroadcasts,
     callAnthropic(state.config.id, request, replyTag)
   ];
 

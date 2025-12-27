@@ -63,7 +63,8 @@ export function createToolsState(maxExecutionTime: number = 30000): ToolsState {
  */
 export function createToolsExecutor(
   toolsState: ToolsState,
-  logger: Logger
+  logger: Logger,
+  onToolResult?: (agentId: string, roomId: string, results: ToolResult[], replyTag: string) => void
 ): EffectExecutor {
   return {
     canHandle(effect: Effect): boolean {
@@ -83,6 +84,28 @@ export function createToolsExecutor(
           effect as ToolEffect,
           logger
         );
+
+        // Route tool results back to agent if callback provided
+        if (onToolResult && effect.type === 'EXECUTE_TOOL') {
+          const execEffect = effect as ExecuteTool;
+          const toolResult = result as ToolResult;
+          onToolResult(
+            execEffect.context.agentId,
+            'general', // TODO: Get actual room from context
+            [toolResult],
+            execEffect.replyTag
+          );
+        } else if (onToolResult && effect.type === 'EXECUTE_TOOLS_BATCH') {
+          const batchEffect = effect as ExecuteToolsBatch;
+          const toolResults = result as readonly ToolResult[];
+          onToolResult(
+            batchEffect.context.agentId,
+            'general', // TODO: Get actual room from context
+            [...toolResults],
+            batchEffect.replyTag
+          );
+        }
+
         return successResult(effect, result, Date.now() - start);
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);

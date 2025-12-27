@@ -127,6 +127,33 @@ export interface SystemNotificationEvent {
 }
 
 /**
+ * Tool use started.
+ * Note: Uses snake_case for frontend compatibility.
+ */
+export interface ToolUseEvent {
+  readonly type: 'tool_use';
+  readonly agent_id: AgentId;
+  readonly agent_name: string;
+  readonly tool_name: string;
+  readonly tool_use_id: string;
+  readonly input: unknown;
+}
+
+/**
+ * Tool result received.
+ * Note: Uses snake_case for frontend compatibility.
+ */
+export interface ToolResultEvent {
+  readonly type: 'tool_result';
+  readonly agent_id: AgentId;
+  readonly agent_name: string;
+  readonly tool_name: string;
+  readonly tool_use_id: string;
+  readonly result: string;
+  readonly is_error: boolean;
+}
+
+/**
  * Union of all UI events.
  */
 export type UIEvent =
@@ -140,7 +167,9 @@ export type UIEvent =
   | BuildProgressEvent
   | ArtifactCreatedEvent
   | ErrorEvent
-  | SystemNotificationEvent;
+  | SystemNotificationEvent
+  | ToolUseEvent
+  | ToolResultEvent;
 
 // ============================================================================
 // EVENT CONSTRUCTORS
@@ -224,6 +253,42 @@ export function systemNotification(
   level: 'info' | 'warning' | 'error' = 'info'
 ): SystemNotificationEvent {
   return Object.freeze({ type: 'system_notification', message, level });
+}
+
+export function toolUse(
+  agentId: AgentId,
+  agentName: string,
+  toolName: string,
+  toolUseId: string,
+  input: unknown
+): ToolUseEvent {
+  return Object.freeze({
+    type: 'tool_use',
+    agent_id: agentId,
+    agent_name: agentName,
+    tool_name: toolName,
+    tool_use_id: toolUseId,
+    input
+  });
+}
+
+export function toolResult(
+  agentId: AgentId,
+  agentName: string,
+  toolName: string,
+  toolUseId: string,
+  result: string,
+  isError: boolean
+): ToolResultEvent {
+  return Object.freeze({
+    type: 'tool_result',
+    agent_id: agentId,
+    agent_name: agentName,
+    tool_name: toolName,
+    tool_use_id: toolUseId,
+    result,
+    is_error: isError
+  });
 }
 
 // ============================================================================
