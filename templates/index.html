@@ -4,6 +4,154 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Arena</title>
+    <script>
+        // WebSocket JSON message handler - defined early so it's available
+        window.__typingAgents = new Set();
+
+        window.__handleJsonWebSocketMessage = function(data) {
+            const messagesDiv = document.getElementById('messages');
+
+            // Handle typing events
+            if (data.type === 'typing' || data.type === 'agent_typing') {
+                const agentName = data.agent_name || data.agentName;
+                const isTyping = data.thinking ?? data.isTyping;
+                if (isTyping) {
+                    window.__typingAgents.add(agentName);
+                } else {
+                    window.__typingAgents.delete(agentName);
+                }
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) {
+                    if (window.__typingAgents.size === 0) {
+                        indicator.innerHTML = '';
+                    } else {
+                        const names = Array.from(window.__typingAgents);
+                        const text = names.length === 1
+                            ? names[0] + ' is thinking'
+                            : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are thinking';
+                        indicator.innerHTML = text + '<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span>';
+                    }
+                }
+                return true;
+            }
+
+            // Handle tool use events
+            if (data.type === 'tool_use' && messagesDiv) {
+                const inputStr = data.input ? (typeof data.input === 'object' ? JSON.stringify(data.input, null, 2) : String(data.input)) : '';
+                const inputPreview = inputStr.slice(0, 500) + (inputStr.length > 500 ? '...' : '');
+                const toolHtml = '<div class="message tool-message" style="background: #1c2128; border-left: 3px solid #f0883e; padding: 0.5rem 1rem; margin: 0.25rem 0; font-size: 0.85rem;"><span style="color: #f0883e;">Tool</span> <strong style="color: #7ee787;">' + (data.agent_name || '') + '</strong><span style="color: #8b949e;"> using </span><code style="background: #30363d; padding: 0.1rem 0.3rem; border-radius: 3px; color: #79c0ff;">' + (data.tool_name || '') + '</code></div>';
+                messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                return true;
+            }
+
+            // Handle tool result events
+            if (data.type === 'tool_result' && messagesDiv) {
+                const statusColor = data.is_error ? '#f85149' : '#3fb950';
+                const statusIcon = data.is_error ? 'Error' : 'Done';
+                const toolHtml = '<div class="message tool-result-message" style="background: #1c2128; border-left: 3px solid ' + statusColor + '; padding: 0.5rem 1rem; margin: 0.25rem 0 0.5rem 1rem; font-size: 0.8rem;"><span style="color: ' + statusColor + ';">' + statusIcon + '</span> <code style="color: #8b949e;">' + (data.tool_name || '') + '</code></div>';
+                messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                return true;
+            }
+
+            // Handle system notification events
+            if (data.type === 'system_notification' && messagesDiv) {
+                const levelColors = { 'info': '#58a6ff', 'warning': '#d29922', 'error': '#f85149' };
+                const color = levelColors[data.level] || levelColors.info;
+                const notifHtml = '<div class="message system-notification" style="background: #21262d; border-left: 3px solid ' + color + '; padding: 0.5rem 1rem; margin: 0.5rem 0; font-size: 0.85rem; color: ' + color + ';">' + (data.message || '') + '</div>';
+                messagesDiv.insertAdjacentHTML('beforeend', notifHtml);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                return true;
+            }
+
+            // Handle message deleted events
+            if (data.type === 'message_deleted') {
+                const el = document.querySelector('[data-message-id="' + data.messageId + '"]');
+                if (el) el.remove();
+                return true;
+            }
+
+            // Handle other known event types silently
+            if (data.type === 'message_added' || data.type === 'agent_status' ||
+                data.type === 'agent_joined' || data.type === 'agent_left' ||
+                data.type === 'phase_changed' || data.type === 'task_updated' ||
+                data.type === 'build_progress') {
+                return true;
+            }
+
+            return true;
+        };
+
+        // MutationObserver fallback - cleans up any JSON that slips through
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagesDiv = document.getElementById('messages');
+            if (!messagesDiv) return;
+
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    mutation.addedNodes.forEach(function(node) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const text = node.textContent.trim();
+                            if (text.startsWith('{"type":') && text.endsWith('}')) {
+                                try {
+                                    const data = JSON.parse(text);
+                                    node.remove();
+                                    window.__handleJsonWebSocketMessage(data);
+                                } catch (e) {}
+                            }
+                        }
+                    });
+                });
+            });
+            observer.observe(messagesDiv, { childList: true, subtree: true });
+        });
+
+        // WebSocket interceptor - MUST run BEFORE HTMX loads
+        (function() {
+            const OriginalWebSocket = window.WebSocket;
+            window.WebSocket = function(url, protocols) {
+                const ws = protocols ? new OriginalWebSocket(url, protocols) : new OriginalWebSocket(url);
+
+                const originalAddEventListener = ws.addEventListener.bind(ws);
+                ws.addEventListener = function(type, listener, options) {
+                    if (type === 'message') {
+                        const wrappedListener = function(event) {
+                            try {
+                                const data = JSON.parse(event.data);
+                                window.__handleJsonWebSocketMessage(data);
+                                return;
+                            } catch (e) {}
+                            listener.call(this, event);
+                        };
+                        return originalAddEventListener(type, wrappedListener, options);
+                    }
+                    return originalAddEventListener(type, listener, options);
+                };
+
+                Object.defineProperty(ws, 'onmessage', {
+                    get: function() { return this._onmessage; },
+                    set: function(handler) {
+                        this._onmessage = function(event) {
+                            try {
+                                const data = JSON.parse(event.data);
+                                window.__handleJsonWebSocketMessage(data);
+                                return;
+                            } catch (e) {}
+                            if (handler) handler.call(this, event);
+                        };
+                    }
+                });
+
+                return ws;
+            };
+            window.WebSocket.prototype = OriginalWebSocket.prototype;
+            window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+            window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+            window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+            window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+        })();
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
     <style>
@@ -961,7 +1109,7 @@
             <div id="topic-container" hx-get="/topic-panel" hx-trigger="load">
                 <!-- Topic bar loaded via HTMX -->
             </div>
-            <div class="messages" id="messages" hx-get="/messages" hx-trigger="load">
+            <div class="messages" id="messages" hx-get="/messages" hx-trigger="load, every 5s">
                 <!-- Messages loaded via HTMX -->
             </div>
 
@@ -1019,7 +1167,6 @@
             </div>
 
             <div class="sidebar-section agents-section" id="agents-panel">
-                <h2>Agents ({{ agents|length }})</h2>
                 {% include "partials/agents.html" %}
 
                 <div class="add-agent-form">
@@ -1150,87 +1297,11 @@
         document.body.addEventListener('htmx:afterSwap', applyAvatarColors);
         document.body.addEventListener('htmx:wsAfterMessage', applyAvatarColors);
 
-        // Auto-scroll messages
-        const messagesDiv = document.getElementById('messages');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const typingAgents = new Set();
-
-        function updateTypingIndicator() {
-            if (typingAgents.size === 0) {
-                typingIndicator.innerHTML = '';
-            } else {
-                const names = Array.from(typingAgents);
-                const text = names.length === 1
-                    ? `${names[0]} is thinking`
-                    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} are thinking`;
-                typingIndicator.innerHTML = `${text}<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span>`;
-            }
-        }
-
-        // Handle WebSocket messages (new chat messages and typing indicators)
-        document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
-            const message = evt.detail.message;
-
-            // Check if it's a JSON typing indicator
-            try {
-                const data = JSON.parse(message);
-                if (data.type === 'typing' || data.type === 'agent_typing') {
-                    const agentName = data.agent_name || data.agentName;
-                    const isTyping = data.thinking ?? data.isTyping;
-                    if (isTyping) {
-                        typingAgents.add(agentName);
-                    } else {
-                        typingAgents.delete(agentName);
-                    }
-                    updateTypingIndicator();
-                    return;
-                }
-
-                // Handle tool use events
-                if (data.type === 'tool_use') {
-                    const inputStr = data.input ? (typeof data.input === 'object' ? JSON.stringify(data.input, null, 2) : String(data.input)) : '';
-                    const inputPreview = inputStr.slice(0, 500) + (inputStr.length > 500 ? '...' : '');
-                    const toolHtml = `
-                        <div class="message tool-message" style="background: #1c2128; border-left: 3px solid #f0883e; padding: 0.5rem 1rem; margin: 0.25rem 0; font-size: 0.85rem;">
-                            <span style="color: #f0883e;">🔧</span>
-                            <strong style="color: #7ee787;">${data.agent_name}</strong>
-                            <span style="color: #8b949e;"> using </span>
-                            <code style="background: #30363d; padding: 0.1rem 0.3rem; border-radius: 3px; color: #79c0ff;">${data.tool_name}</code>
-                            ${inputPreview ? `<pre style="color: #8b949e; margin: 0.5rem 0 0 0; padding: 0.5rem; background: #0d1117; border-radius: 4px; font-size: 0.75rem; white-space: pre-wrap; max-height: 150px; overflow: auto;">${inputPreview.replace(/</g, '&lt;')}</pre>` : ''}
-                        </div>`;
-                    messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                    return;
-                }
-
-                // Handle tool result events
-                if (data.type === 'tool_result') {
-                    const statusColor = data.is_error ? '#f85149' : '#3fb950';
-                    const statusIcon = data.is_error ? '❌' : '✓';
-                    const resultPreview = data.result ? data.result.slice(0, 500) + (data.result.length > 500 ? '...' : '') : '';
-                    const toolHtml = `
-                        <div class="message tool-result-message" style="background: #1c2128; border-left: 3px solid ${statusColor}; padding: 0.5rem 1rem; margin: 0.25rem 0 0.5rem 1rem; font-size: 0.8rem;">
-                            <span style="color: ${statusColor};">${statusIcon}</span>
-                            <code style="color: #8b949e;">${data.tool_name}</code>
-                            ${resultPreview ? `<pre style="color: #6e7681; margin: 0.5rem 0 0 0; padding: 0.5rem; background: #0d1117; border-radius: 4px; font-family: monospace; white-space: pre-wrap; max-height: 150px; overflow: auto;">${resultPreview.replace(/</g, '&lt;')}</pre>` : ''}
-                        </div>`;
-                    messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                    return;
-                }
-            } catch (e) {
-                // Not JSON, it's HTML content
-            }
-
-            // Append new message HTML
-            messagesDiv.insertAdjacentHTML('beforeend', message);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
-
-        // Scroll to bottom on load
+        // Scroll to bottom on message swap
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             if (evt.target.id === 'messages') {
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                const messagesDiv = document.getElementById('messages');
+                if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }
         });
 
@@ -1605,22 +1676,6 @@
                 ? window.location.pathname.split('/r/')[1]
                 : 'general';
         }
-
-        // Handle WebSocket project updates
-        document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
-            try {
-                const data = JSON.parse(evt.detail.message);
-                if (data.type === 'phase_changed' || data.type === 'task_updated') {
-                    htmx.ajax('GET', '/project-panel', '#project-panel');
-                }
-                if (data.type === 'build_progress') {
-                    // Could add build progress indicator here
-                    console.log(`Build progress: ${data.agentName} - ${data.toolCallCount}/${data.maxToolCalls}`);
-                }
-            } catch (e) {
-                // Not JSON or not a project update
-            }
-        });
 
         // Close modal on escape
         document.addEventListener('keydown', function(e) {

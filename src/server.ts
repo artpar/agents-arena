@@ -48,6 +48,8 @@ import {
   agentAddress
 } from './effects/actor.js';
 import { respondToMessage } from './interpreters/room.js';
+import { agentsLoaded } from './interpreters/director.js';
+import { AgentConfig, createAgentConfig } from './values/agent.js';
 import {
   createChatMessage,
   ChatMessage
@@ -283,8 +285,21 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       maxTurns
     });
 
-    const status = { running: true, mode, max_turns: maxTurns };
-    res.render('partials/controls.html', { status });
+    const status = { running: true, mode, max_turns: maxTurns, current_round: 0 };
+    // Render controls and status panel with OOB swap
+    const controlsHtml = await new Promise<string>((resolve, reject) => {
+      req.app.render('partials/controls.html', { status }, (err, html) => {
+        if (err) reject(err);
+        else resolve(html);
+      });
+    });
+    const statusHtml = await new Promise<string>((resolve, reject) => {
+      req.app.render('partials/status.html', { status }, (err, html) => {
+        if (err) reject(err);
+        else resolve(html);
+      });
+    });
+    res.send(`${controlsHtml}<div id="status-panel" hx-swap-oob="innerHTML">${statusHtml}</div>`);
   });
 
   app.post('/stop', async (req: Request, res: Response) => {
@@ -293,8 +308,21 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       type: 'STOP'
     });
 
-    const status = { running: false, mode: 'hybrid', max_turns: 20 };
-    res.render('partials/controls.html', { status });
+    const status = { running: false, mode: 'hybrid', max_turns: 20, current_round: 0 };
+    // Render controls and status panel with OOB swap
+    const controlsHtml = await new Promise<string>((resolve, reject) => {
+      req.app.render('partials/controls.html', { status }, (err, html) => {
+        if (err) reject(err);
+        else resolve(html);
+      });
+    });
+    const statusHtml = await new Promise<string>((resolve, reject) => {
+      req.app.render('partials/status.html', { status }, (err, html) => {
+        if (err) reject(err);
+        else resolve(html);
+      });
+    });
+    res.send(`${controlsHtml}<div id="status-panel" hx-swap-oob="innerHTML">${statusHtml}</div>`);
   });
 
   // ============================================================================
@@ -371,11 +399,16 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   });
 
   app.delete('/agents/:agentId', async (req: Request, res: Response) => {
+    const agentId = req.params.agentId as AgentId;
+
     // Send stop command to director
     runtime.actors.send(directorAddress(), {
       type: 'STOP_AGENT',
-      agentId: req.params.agentId as AgentId
+      agentId
     });
+
+    // Also delete from database
+    deleteDbAgent(agentId);
 
     res.json({ status: 'removed' });
   });
@@ -436,7 +469,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   // Room switching
   app.get('/r/:roomName', async (req: Request, res: Response) => {
     const roomName = req.params.roomName.toLowerCase().replace(/ /g, '-');
-    const roomId = `room_${roomName}` as RoomId;
+    const roomId = roomName as RoomId;
 
     // Send room creation/join to director
     runtime.actors.send(directorAddress(), {
@@ -942,6 +975,38 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     }
   });
 
+  // Load and spawn agents from database
+  const dbAgents = getDbAgents();
+  if (dbAgents.length > 0) {
+    const agentConfigs: AgentConfig[] = dbAgents.map(row => {
+      const config = JSON.parse(row.config_json || '{}');
+      return createAgentConfig({
+        id: row.id as AgentId,
+        name: row.name,
+        description: config.description || '',
+        systemPrompt: config.systemPrompt || config.system_prompt || '',
+        model: config.model || 'haiku',
+        temperature: config.temperature || 0.7,
+        tools: config.tools || [],
+        personalityTraits: config.personalityTraits || config.personality_traits || {},
+        speakingStyle: config.speakingStyle || config.speaking_style || '',
+        interests: config.interests || [],
+        responseTendency: config.responseTendency || config.response_tendency || 0.5,
+        background: config.background || null,
+        expertise: config.expertise || [],
+        warStories: config.warStories || config.war_stories || [],
+        strongOpinions: config.strongOpinions || config.strong_opinions || [],
+        currentObsession: config.currentObsession || config.current_obsession || null,
+        blindSpots: config.blindSpots || config.blind_spots || [],
+        communicationQuirks: config.communicationQuirks || config.communication_quirks || [],
+        needsBeforeContributing: config.needsBeforeContributing || config.needs_before_contributing || [],
+        asksForInfoFrom: config.asksForInfoFrom || config.asks_for_info_from || {}
+      });
+    });
+    runtime.actors.send(directorAddress(), agentsLoaded(agentConfigs));
+    runtime.logger.info(`Loaded ${agentConfigs.length} agents from database`);
+  }
+
   // Start listening
   server.listen(config.port, '0.0.0.0');
 
@@ -1002,21 +1067,39 @@ function getStatus(runtime: RuntimeContext): Record<string, unknown> {
 }
 
 function getAgents(runtime: RuntimeContext): unknown[] {
+  // Get agents from database
+  const dbAgents = getDbAgents();
+
+  // Get running actors to overlay status
   const actors = Object.values(runtime.actors.state.actors);
-  return actors
-    .filter(a => a.address.startsWith('agent:'))
-    .map(a => {
-      const state = a.state as {
-        config?: { name?: string; description?: string };
-        status?: string;
-      } | undefined;
-      return {
-        id: a.address.replace('agent:', ''),
-        name: state?.config?.name ?? 'Unknown',
-        description: state?.config?.description ?? '',
-        status: a.isProcessing ? 'thinking' : (state?.status ?? 'idle')
-      };
-    });
+  const actorMap = new Map<string, { isProcessing: boolean; status?: string }>();
+
+  for (const a of actors) {
+    if (a.address.startsWith('agent:')) {
+      const agentId = a.address.replace('agent:', '');
+      const state = a.state as { status?: string } | undefined;
+      actorMap.set(agentId, {
+        isProcessing: a.isProcessing,
+        status: state?.status
+      });
+    }
+  }
+
+  return dbAgents.map(agent => {
+    const actorState = actorMap.get(agent.id);
+    let status = agent.status || 'offline';
+
+    if (actorState) {
+      status = actorState.isProcessing ? 'thinking' : (actorState.status || 'idle');
+    }
+
+    return {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description || '',
+      status
+    };
+  });
 }
 
 function getMessages(runtime: RuntimeContext, limit: number): unknown[] {

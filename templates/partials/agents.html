@@ -1,4 +1,7 @@
-<div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s">
+<div id="agents-header">
+    <h2>Agents ({{ agents|length }})</h2>
+</div>
+<div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s" hx-select="#agents-header, #agents-list" hx-target="#agents-panel" hx-swap="innerHTML">
     <ul class="agent-list">
         {% for agent in agents %}
         <li>
