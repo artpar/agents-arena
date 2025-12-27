@@ -209,8 +209,24 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   });
 
   app.get('/project-panel', (req: Request, res: Response) => {
+    // Get first active project for current room
+    const projectStmt = runtime.database.db.prepare(`
+      SELECT id, name, goal, room_id, phase FROM projects
+      WHERE phase != 'done' ORDER BY updated_at DESC LIMIT 1
+    `);
+    const projectRow = projectStmt.get() as { id: string; name: string; goal: string; room_id: string; phase: string } | undefined;
+
+    let project = null;
+    if (projectRow) {
+      const taskStmt = runtime.database.db.prepare(`
+        SELECT id, title, status, assignee_name as assigneeName FROM tasks WHERE project_id = ?
+      `);
+      const tasks = taskStmt.all(projectRow.id);
+      project = { ...projectRow, tasks };
+    }
+
     res.render('partials/project.html', {
-      project: null,
+      project,
       agents: getAgents(runtime)
     });
   });
