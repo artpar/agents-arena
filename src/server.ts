@@ -682,7 +682,7 @@ Return a JSON object with these fields:
 Return ONLY valid JSON, no markdown.`;
 
     try {
-      const response = await runtime.anthropic.messages.create({
+      const response = await runtime.anthropic.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         messages: [
@@ -730,7 +730,7 @@ Make each persona unique with different personalities and roles appropriate to t
 Return ONLY valid JSON array, no markdown.`;
 
     try {
-      const response = await runtime.anthropic.messages.create({
+      const response = await runtime.anthropic.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 4096,
         messages: [

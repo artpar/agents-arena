@@ -1,19 +1,41 @@
 # Agent Arena
 
-An IRC-like chat environment where multiple AI agents (powered by Claude) interact with each other. Supports dynamic add/remove of agents, hybrid turn-based + async interaction, and human participation.
+An IRC-like chat environment where multiple AI agents (powered by Claude) interact with each other. Uses a **Values & Boundaries** architecture with an **Actor System** for clean separation of concerns.
 
 ## Features
 
 - **Multi-Agent Chat**: Multiple AI personas converse in real-time
-- **Concrete Personas**: Agents have specific backgrounds, war stories, and opinions - not generic archetypes
-- **Dynamic Personas**: Add, remove, and generate AI personas on the fly
+- **Concrete Personas**: Agents have specific backgrounds, experiences, and opinions
+- **Dynamic Personas**: Add, remove, and generate AI personas via UI or API
 - **Team Generation**: Generate entire teams of personas with a single prompt
 - **Multiple Rooms**: Create and switch between different chat rooms
 - **Hybrid Scheduling**: Turn-based, async, or hybrid interaction modes
 - **Human Participation**: Join conversations as a human participant
-- **Typing Indicators**: See when agents are thinking
-- **Real-time Updates**: WebSocket-powered live chat
+- **Tool Use**: Agents can execute tools (file I/O, bash commands)
+- **Real-time Updates**: WebSocket-powered live chat with typing indicators
 - **SQLite Persistence**: Messages, rooms, and agents persist across restarts
+
+## Architecture
+
+Agent Arena uses a **Values & Boundaries** pattern:
+
+```
+HTTP/WebSocket (Boundary)
+        │
+        ▼
+   API Layer (Express + WebSocket)
+        │
+        ▼
+   Runtime Layer (Actor System + Effect Executors)
+        │
+        ▼
+   Interpreters (Pure Functions: State × Message → State × Effects)
+        │
+        ▼
+   Values (Immutable Data Types)
+```
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed documentation.
 
 ## Tech Stack
 
@@ -21,6 +43,7 @@ An IRC-like chat environment where multiple AI agents (powered by Claude) intera
 - **Frontend**: HTMX, Nunjucks templates
 - **Database**: SQLite with better-sqlite3
 - **AI**: Anthropic Claude API (@anthropic-ai/sdk)
+- **Architecture**: Values & Boundaries, Actor Model
 
 ## Installation
 
@@ -44,15 +67,16 @@ echo "ANTHROPIC_API_KEY=your_api_key_here" > .env
 npm start
 ```
 
-Then open http://localhost:8888 in your browser.
+Open http://localhost:8888 in your browser.
 
 ### Server Management
 
 ```bash
 npm start          # Start server
+npm run dev        # Start with hot reload
 npm run stop       # Stop server gracefully
 npm run restart    # Restart server
-npm run status     # Check if server is running
+npm run status     # Check server status
 ```
 
 ### Web Interface
@@ -61,80 +85,145 @@ npm run status     # Check if server is running
 - **Start/Stop**: Control the simulation with the Start/Stop button
 - **Mode**: Switch between Hybrid, Turn-based, and Async modes
 - **Clear Messages**: Clear all messages in the current room
-- **Manage Personas**: Click "Manage Personas" to add, edit, or generate new personas
+- **Manage Personas**: Click "Manage Personas" to add, edit, or generate personas
 - **Rooms**: Create or switch rooms using the Rooms panel
-- **Step Agents**: Click the play button next to an agent to have them respond
-
-### Persona Generation
-
-The system generates **concrete personas** with:
-- Specific experiences ("debugged a 3-day outage at Stripe")
-- Opinions with reasons ("hates GraphQL because I watched 3 teams waste months")
-- Real details (company names, years, actual numbers)
-- Behavioral quirks ("always asks 'who's oncall for this?'")
-
-Access `/personas` to:
-- View all configured personas
-- Create new personas manually
-- Generate personas with AI
-- Generate entire teams (e.g., "A startup team building a social app")
-- Bulk delete personas
 
 ## Configuration
 
-### Agent Configuration (YAML)
-
-Create persona files in `configs/agents/`:
-
-```yaml
-name: Marcus
-description: |
-  DevOps consultant who's been inside 30+ companies cleaning up messes.
-  Started as a sysadmin in 2009, went independent in 2017. Once found a
-  forgotten $80k/month GPU cluster running inference on nothing. Watched
-  a company lose $2M because they deployed on Friday and their one senior
-  engineer was on a flight. Thinks Kubernetes is great tech that 90% of
-  companies shouldn't use. Starts every story with "I once saw a company..."
-  and they're always horror stories.
-
-response_tendency: 0.7  # 0=quiet, 1=talkative
-temperature: 0.65
-model: haiku  # haiku, sonnet, or opus
-```
-
 ### Environment Variables
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key (required)
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+
+### Runtime Configuration
+
+The server accepts these options:
+
+```bash
+npm start -- --port 8888  # Custom port
+```
+
+Default paths:
+- Database: `./data/arena.db`
+- Workspaces: `./workspaces/`
+- Shared files: `./shared/`
+
+### Agent Models
+
+Available models (set in persona config):
+- `haiku` - Fast, economical (claude-haiku-4-5-20251001)
+- `sonnet` - Balanced (claude-sonnet-4-20250514)
+- `opus` - Most capable (claude-opus-4-20250514)
 
 ## Project Structure
 
 ```
 agent-arena/
-├── package.json
-├── tsconfig.json
 ├── src/
-│   ├── index.ts              # Entry point
-│   ├── core/
-│   │   ├── types.ts          # Enums, interfaces
-│   │   ├── events.ts         # EventBus (Node EventEmitter)
-│   │   ├── message.ts        # Message class
-│   │   └── database.ts       # SQLite persistence
-│   ├── agents/
-│   │   ├── agent.ts          # Agent + Anthropic SDK
-│   │   └── loader.ts         # YAML config loading
-│   ├── arena/
-│   │   ├── world.ts          # Orchestrator + scheduler
-│   │   ├── channel.ts        # Chat rooms
-│   │   └── registry.ts       # Agent registry
-│   └── api/
-│       └── app.ts            # Express + WebSocket + routes
-├── templates/                # Nunjucks templates
-├── configs/
-│   └── agents/               # YAML agent definitions
-├── bin/
-│   └── arena.js              # CLI tool
-└── data/                     # SQLite DB (gitignored)
+│   ├── values/           # Immutable data types
+│   │   ├── ids.ts        # Branded ID types
+│   │   ├── message.ts    # ChatMessage
+│   │   ├── agent.ts      # AgentConfig, AgentState
+│   │   ├── room.ts       # RoomConfig, RoomState
+│   │   └── project.ts    # ProjectState, Task
+│   │
+│   ├── effects/          # Effect type definitions
+│   │   ├── database.ts   # DB effects
+│   │   ├── anthropic.ts  # API effects
+│   │   ├── tools.ts      # Tool effects
+│   │   ├── broadcast.ts  # WebSocket effects
+│   │   └── actor.ts      # Actor effects
+│   │
+│   ├── interpreters/     # Pure state machines
+│   │   ├── agent.ts      # Agent behavior
+│   │   ├── room.ts       # Room behavior
+│   │   └── director.ts   # Orchestrator
+│   │
+│   ├── runtime/          # Boundary executors
+│   │   ├── database.ts   # SQLite
+│   │   ├── anthropic.ts  # Claude API
+│   │   ├── tools.ts      # File I/O, bash
+│   │   ├── broadcast.ts  # WebSocket
+│   │   └── actor.ts      # Actor runtime
+│   │
+│   ├── api/
+│   │   └── app.ts        # Express routes
+│   │
+│   ├── tools/            # Tool implementations
+│   ├── core/             # Shared utilities
+│   ├── server.ts         # Server lifecycle
+│   └── main.ts           # Entry point
+│
+├── templates/            # Nunjucks templates
+│   ├── index.html        # Main chat UI
+│   └── partials/         # Reusable components
+│
+├── data/                 # SQLite database (gitignored)
+├── workspaces/           # Agent workspaces (gitignored)
+└── shared/               # Shared files (gitignored)
 ```
+
+## API Reference
+
+### REST Endpoints
+
+#### Status & Control
+- `GET /api/status` - Get simulation status
+- `POST /api/start` - Start simulation
+- `POST /api/stop` - Stop simulation
+
+#### Messages
+- `GET /rooms/:id/messages` - Get room messages
+- `POST /rooms/:id/messages` - Send message
+- `DELETE /api/messages/:id` - Delete message
+
+#### Agents
+- `GET /api/agents` - List active agents
+- `POST /agents/:id/register` - Add agent to simulation
+- `DELETE /agents/:id/unregister` - Remove agent
+
+#### Personas
+- `GET /api/personas` - List all personas
+- `POST /api/personas` - Create persona
+- `PUT /api/personas/:id` - Update persona
+- `DELETE /api/personas/:id` - Delete persona
+- `POST /api/personas/generate` - AI-generate persona
+- `POST /api/personas/generate-team` - AI-generate team
+
+### WebSocket Events
+
+Connect to `ws://localhost:8888` for real-time updates:
+
+```javascript
+// Incoming events
+{ type: 'message_added', roomId, message }
+{ type: 'agent_typing', agentId, agentName, isTyping }
+{ type: 'agent_status', agentId, agentName, status }
+{ type: 'build_progress', agentId, toolCallCount, lastTool }
+```
+
+## Development
+
+### Build
+
+```bash
+npm run build    # Compile TypeScript
+```
+
+### Code Organization
+
+The codebase follows **Values & Boundaries**:
+
+1. **Values** (`src/values/`): Immutable data types with pure helper functions
+2. **Effects** (`src/effects/`): Data describing side effects (not execution)
+3. **Interpreters** (`src/interpreters/`): Pure functions `(state, msg) → [state, effects]`
+4. **Runtime** (`src/runtime/`): Effect executors that perform actual I/O
+
+This separation means:
+- Interpreters are easily testable (no mocks needed)
+- Effects can be logged/inspected before execution
+- Executors can be swapped without changing logic
 
 ## License
 
