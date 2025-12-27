@@ -179,15 +179,20 @@ export function createApp(world?: ArenaWorld) {
 
   app.get('/messages', (req: Request, res: Response) => {
     const channel = world!.getChannel(world!.defaultChannel);
+    const roomId = channel?.id;
     const messages = channel ? channel.getRecentMessages(50).map(m => ({
       type: 'message',
       timestamp: m.timestamp.toISOString(),
       ...m.toDict()
     })) : [];
 
-    // Get tool events
+    // Get tool events for this room
     const toolEvents = db.getEventLog(undefined, undefined, 200)
-      .filter(e => e.event_type === 'tool_use' || e.event_type === 'tool_result')
+      .filter(e => {
+        if (e.event_type !== 'tool_use' && e.event_type !== 'tool_result') return false;
+        const data = JSON.parse(e.event_data);
+        return data.room_id === roomId;
+      })
       .map(e => {
         const data = JSON.parse(e.event_data);
         return {
@@ -340,8 +345,16 @@ export function createApp(world?: ArenaWorld) {
   app.delete('/api/messages', (req: Request, res: Response) => {
     const channel = world!.getChannel(world!.defaultChannel);
     if (channel) {
-      const count = channel.clearMessages();
-      res.json({ status: 'cleared', count });
+      const messageCount = channel.clearMessages();
+      // Both events and artifacts use the room UUID
+      const eventCount = db.clearEventsByRoom(channel.id);
+      const artifactCount = db.clearArtifactsByRoom(channel.id);
+      res.json({
+        status: 'cleared',
+        messages: messageCount,
+        events: eventCount,
+        artifacts: artifactCount
+      });
     } else {
       res.status(404).json({ status: 'error', message: 'Channel not found' });
     }
@@ -436,15 +449,38 @@ export function createApp(world?: ArenaWorld) {
 
   app.post('/agents/add', async (req: Request, res: Response) => {
     try {
-      // Accept agent config directly in request body
-      const config = req.body;
+      // Accept both form data (config_path) and JSON (name)
+      const configPath = req.body.config_path;
+      const config = configPath ? { name: configPath } : req.body;
 
       if (!config.name) {
         res.status(400).json({ error: 'Agent name is required' });
         return;
       }
 
-      // Generate ID if not provided
+      // Check if agent already exists in registry
+      const existingAgent = world?.registry.getByName(config.name);
+      if (existingAgent) {
+        res.status(400).json({ error: `Agent "${config.name}" is already active` });
+        return;
+      }
+
+      // Try to load from database if only name provided
+      if (configPath) {
+        const dbAgent = db.getAgentByName(config.name);
+        if (dbAgent) {
+          const agent = Agent.fromConfig(dbAgent);
+          await world!.addAgent(agent);
+          res.render('partials/agents.html', {
+            agents: world!.registry.all()
+          });
+          return;
+        }
+        res.status(404).json({ error: `Persona "${config.name}" not found. Create it in the Personas page first.` });
+        return;
+      }
+
+      // Generate ID if not provided (for JSON config)
       if (!config.id) {
         config.id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       }
@@ -825,18 +861,9 @@ export function createApp(world?: ArenaWorld) {
   });
 
   app.get('/api/personas', (req: Request, res: Response) => {
-    // Return all agents from registry
+    // Return all agents from registry with full data
     const agents = world?.registry.all() || [];
-    res.json(agents.map(a => ({
-      id: a.id,
-      name: a.name,
-      description: a.description,
-      response_tendency: a.response_tendency,
-      temperature: a.temperature,
-      model: a.model,
-      status: a.status,
-      message_count: a.message_count
-    })));
+    res.json(agents.map(a => a.toDict()));
   });
 
   app.post('/api/personas', async (req: Request, res: Response) => {
@@ -1183,9 +1210,12 @@ Generate the JSON array of ${count} personas:`;
   });
 
   app.post('/api/personas/bulk-delete', (req: Request, res: Response) => {
-    const { ids = [], names = [] } = req.body;
-    if (ids.length === 0 && names.length === 0) {
-      res.status(400).json({ error: 'No ids or names provided' });
+    const { ids = [], names = [], filenames = [] } = req.body;
+    // filenames are treated as IDs (for frontend compatibility)
+    const allIds = [...ids, ...filenames];
+
+    if (allIds.length === 0 && names.length === 0) {
+      res.status(400).json({ error: 'No ids, names, or filenames provided' });
       return;
     }
 
@@ -1195,7 +1225,7 @@ Generate the JSON array of ${count} personas:`;
     // Collect agents to delete (by id or name)
     const agentsToDelete: Array<{ id: string; name: string }> = [];
 
-    for (const id of ids) {
+    for (const id of allIds) {
       const agent = world?.registry.get(id);
       if (agent) {
         agentsToDelete.push({ id: agent.id, name: agent.name });
@@ -1239,19 +1269,8 @@ Generate the JSON array of ${count} personas:`;
       return;
     }
 
-    res.json({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      system_prompt: agent.system_prompt,
-      speaking_style: agent.speaking_style,
-      interests: agent.interests,
-      response_tendency: agent.response_tendency,
-      temperature: agent.temperature,
-      model: agent.model,
-      status: agent.status,
-      message_count: agent.message_count
-    });
+    // Use toDict() for complete agent data including personality_traits
+    res.json(agent.toDict());
   });
 
   // Update persona by ID or name

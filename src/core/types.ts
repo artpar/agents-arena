@@ -50,6 +50,10 @@ export interface AgentConfig {
   current_obsession?: string;       // What they can't stop thinking about
   blind_spots?: string[];           // What they dismiss or don't understand
   communication_quirks?: string[];  // How they uniquely express themselves
+
+  // Expertise dependencies - who provides what info
+  needs_before_contributing?: string[];           // Info they need before they can do their job
+  asks_for_info_from?: Record<string, string>;    // Maps "info needed" -> "Role who provides it"
 }
 
 export interface Attachment {
@@ -99,6 +103,7 @@ export interface WorldStatus {
 
 export interface AgentData {
   id: string;
+  _filename: string;  // For template compatibility (uses id as identifier)
   name: string;
   description: string;
   status: string;
@@ -110,4 +115,9 @@ export interface AgentData {
   model: string;
   message_count: number;
   last_spoke_at: string | null;
+
+  // Expertise dependencies (optional for backwards compatibility)
+  expertise?: string[];
+  needs_before_contributing?: string[];
+  asks_for_info_from?: Record<string, string>;
 }

@@ -143,6 +143,21 @@ function createTables(db: Database.Database): void {
     )
   `);
 
+  // Artifacts table (memory tool storage - file-like storage per room/agent)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+      UNIQUE(room_id, agent_id, path)
+    )
+  `);
+
   // Create indexes for common queries
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id);
@@ -151,6 +166,8 @@ function createTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_event_log_session ON event_log(session_id);
     CREATE INDEX IF NOT EXISTS idx_event_log_type ON event_log(event_type);
     CREATE INDEX IF NOT EXISTS idx_event_log_created ON event_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_room_agent ON artifacts(room_id, agent_id);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_path ON artifacts(path);
   `);
 
   console.log('Database initialized at', DB_PATH);
@@ -276,6 +293,12 @@ export function getAgent(id: string): AgentRow | undefined {
   return stmt.get(id) as AgentRow | undefined;
 }
 
+export function getAgentByName(name: string): AgentRow | undefined {
+  const db = getDatabase();
+  const stmt = db.prepare('SELECT * FROM agents WHERE LOWER(name) = LOWER(?)');
+  return stmt.get(name) as AgentRow | undefined;
+}
+
 export function getAllAgents(): AgentRow[] {
   const db = getDatabase();
   const stmt = db.prepare('SELECT * FROM agents ORDER BY name');
@@ -322,6 +345,12 @@ export function removeRoomMember(roomId: string, agentId: string): void {
   const db = getDatabase();
   const stmt = db.prepare('DELETE FROM room_members WHERE room_id = ? AND agent_id = ?');
   stmt.run(roomId, agentId);
+}
+
+export function removeAgentFromAllRooms(agentId: string): void {
+  const db = getDatabase();
+  const stmt = db.prepare('DELETE FROM room_members WHERE agent_id = ?');
+  stmt.run(agentId);
 }
 
 export function getRoomMembers(roomId: string): string[] {
@@ -516,6 +545,136 @@ export function getEventLog(sessionId?: string, eventType?: string, limit: numbe
 
   const stmt = db.prepare(sql);
   return stmt.all(...params) as EventLogRow[];
+}
+
+export function clearEventsByRoom(roomId: string): number {
+  const db = getDatabase();
+  // event_data is JSON with room_id field
+  const stmt = db.prepare(`
+    DELETE FROM event_log
+    WHERE json_extract(event_data, '$.room_id') = ?
+  `);
+  const result = stmt.run(roomId);
+  return result.changes;
+}
+
+// ==================== Artifact Operations (Memory Tool Storage) ====================
+
+export interface ArtifactRow {
+  id: string;
+  room_id: string;
+  agent_id: string;
+  path: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createArtifact(artifact: {
+  id: string;
+  roomId: string;
+  agentId: string;
+  path: string;
+  content: string;
+}): ArtifactRow {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    INSERT INTO artifacts (id, room_id, agent_id, path, content)
+    VALUES (?, ?, ?, ?, ?)
+    RETURNING *
+  `);
+  return stmt.get(
+    artifact.id,
+    artifact.roomId,
+    artifact.agentId,
+    artifact.path,
+    artifact.content
+  ) as ArtifactRow;
+}
+
+export function getArtifact(roomId: string, agentId: string, path: string): ArtifactRow | undefined {
+  const db = getDatabase();
+  const stmt = db.prepare('SELECT * FROM artifacts WHERE room_id = ? AND agent_id = ? AND path = ?');
+  return stmt.get(roomId, agentId, path) as ArtifactRow | undefined;
+}
+
+export function getArtifactById(id: string): ArtifactRow | undefined {
+  const db = getDatabase();
+  const stmt = db.prepare('SELECT * FROM artifacts WHERE id = ?');
+  return stmt.get(id) as ArtifactRow | undefined;
+}
+
+export function listArtifacts(roomId: string, agentId: string, pathPrefix?: string): ArtifactRow[] {
+  const db = getDatabase();
+  if (pathPrefix) {
+    const stmt = db.prepare('SELECT * FROM artifacts WHERE room_id = ? AND agent_id = ? AND path LIKE ? ORDER BY path');
+    return stmt.all(roomId, agentId, `${pathPrefix}%`) as ArtifactRow[];
+  } else {
+    const stmt = db.prepare('SELECT * FROM artifacts WHERE room_id = ? AND agent_id = ? ORDER BY path');
+    return stmt.all(roomId, agentId) as ArtifactRow[];
+  }
+}
+
+export interface ArtifactWithAgent {
+  path: string;
+  agentId: string;
+  agentName: string;
+}
+
+export function listAllArtifactsInRoom(roomId: string, excludeAgentId: string): ArtifactWithAgent[] {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    SELECT a.path, a.agent_id as agentId, COALESCE(ag.name, a.agent_id) as agentName
+    FROM artifacts a
+    LEFT JOIN agents ag ON a.agent_id = ag.id
+    WHERE a.room_id = ?
+      AND a.agent_id != ?
+      AND a.agent_id != '_shared_'
+    ORDER BY ag.name, a.path
+  `);
+  return stmt.all(roomId, excludeAgentId) as ArtifactWithAgent[];
+}
+
+export function updateArtifact(roomId: string, agentId: string, path: string, content: string): ArtifactRow | undefined {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    UPDATE artifacts
+    SET content = ?, updated_at = datetime('now')
+    WHERE room_id = ? AND agent_id = ? AND path = ?
+    RETURNING *
+  `);
+  return stmt.get(content, roomId, agentId, path) as ArtifactRow | undefined;
+}
+
+export function deleteArtifact(roomId: string, agentId: string, path: string): boolean {
+  const db = getDatabase();
+  const stmt = db.prepare('DELETE FROM artifacts WHERE room_id = ? AND agent_id = ? AND path = ?');
+  const result = stmt.run(roomId, agentId, path);
+  return result.changes > 0;
+}
+
+export function clearArtifactsByRoom(roomId: string): number {
+  const db = getDatabase();
+  const stmt = db.prepare('DELETE FROM artifacts WHERE room_id = ?');
+  const result = stmt.run(roomId);
+  return result.changes;
+}
+
+export function renameArtifact(roomId: string, agentId: string, oldPath: string, newPath: string): ArtifactRow | undefined {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    UPDATE artifacts
+    SET path = ?, updated_at = datetime('now')
+    WHERE room_id = ? AND agent_id = ? AND path = ?
+    RETURNING *
+  `);
+  return stmt.get(newPath, roomId, agentId, oldPath) as ArtifactRow | undefined;
+}
+
+export function artifactExists(roomId: string, agentId: string, path: string): boolean {
+  const db = getDatabase();
+  const stmt = db.prepare('SELECT 1 FROM artifacts WHERE room_id = ? AND agent_id = ? AND path = ?');
+  return stmt.get(roomId, agentId, path) !== undefined;
 }
 
 // ==================== Utility ====================

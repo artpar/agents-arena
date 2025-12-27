@@ -14,7 +14,7 @@
  */
 
 import { spawn, execSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, openSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -78,8 +78,8 @@ async function startServer(daemon = false) {
     // Ensure data directory exists
     execSync(`mkdir -p ${join(ROOT_DIR, 'data')}`);
 
-    const out = require('fs').openSync(LOG_FILE, 'a');
-    const err = require('fs').openSync(LOG_FILE, 'a');
+    const out = openSync(LOG_FILE, 'a');
+    const err = openSync(LOG_FILE, 'a');
 
     const child = spawn('npx', ['tsx', 'src/index.ts'], {
       cwd: ROOT_DIR,
@@ -153,19 +153,31 @@ async function showStatus() {
 async function simControl(action) {
   if (action === 'start') {
     console.log(colors.cyan('Starting simulation...'));
-    const result = await apiCall('POST', '/api/start');
-    if (result) {
-      console.log(colors.green('Simulation started'));
-    } else {
+    try {
+      const response = await fetch(`${API_BASE}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'mode=hybrid&maxTurns=50'
+      });
+      if (response.ok) {
+        console.log(colors.green('Simulation started'));
+      } else {
+        console.log(colors.red('Failed to start simulation'));
+      }
+    } catch {
       console.log(colors.red('Failed to start simulation (server not running?)'));
     }
   } else if (action === 'stop') {
     console.log(colors.cyan('Stopping simulation...'));
-    const result = await apiCall('POST', '/api/stop');
-    if (result) {
-      console.log(colors.green('Simulation stopped'));
-    } else {
-      console.log(colors.red('Failed to stop simulation'));
+    try {
+      const response = await fetch(`${API_BASE}/stop`, { method: 'POST' });
+      if (response.ok) {
+        console.log(colors.green('Simulation stopped'));
+      } else {
+        console.log(colors.red('Failed to stop simulation'));
+      }
+    } catch {
+      console.log(colors.red('Failed to stop simulation (server not running?)'));
     }
   }
 }

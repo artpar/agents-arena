@@ -648,6 +648,303 @@
         .add-room-form button {
             width: 100%;
         }
+
+        /* Project Panel Styles */
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .project-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .phase-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .phase-idle { background: var(--bg-tertiary); color: var(--text-secondary); }
+        .phase-planning { background: #1a365d; color: #63b3ed; }
+        .phase-building { background: #22543d; color: #68d391; }
+        .phase-reviewing { background: #744210; color: #fbd38d; }
+        .phase-done { background: #234e52; color: #4fd1c5; }
+
+        .project-goal {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+        }
+
+        .project-tasks {
+            margin-bottom: 0.75rem;
+        }
+
+        .tasks-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .add-task-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            width: 22px;
+            height: 22px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .add-task-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .task-list {
+            list-style: none;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .task-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem;
+            border-radius: 4px;
+            margin-bottom: 0.25rem;
+            background: var(--bg-tertiary);
+        }
+
+        .task-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .task-unassigned .task-status-dot { background: #6b7280; }
+        .task-assigned .task-status-dot { background: #60a5fa; }
+        .task-in_progress .task-status-dot { background: #fbbf24; animation: pulse 1s infinite; }
+        .task-done .task-status-dot { background: #34d399; }
+
+        .task-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-title {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .task-assignee {
+            font-size: 0.75rem;
+            color: var(--accent);
+        }
+
+        .task-unassigned {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .assign-btn {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .assign-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .no-tasks {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            text-align: center;
+            padding: 0.5rem;
+        }
+
+        .project-actions {
+            margin-top: 0.5rem;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 0.5rem;
+            font-size: 0.85rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .action-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .action-btn.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .action-btn.primary:hover {
+            background: #c73e54;
+        }
+
+        .building-status, .done-status {
+            text-align: center;
+            padding: 0.5rem;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+
+        .building-status {
+            background: #22543d;
+            color: #68d391;
+        }
+
+        .done-status {
+            background: #234e52;
+            color: #4fd1c5;
+        }
+
+        .no-project {
+            text-align: center;
+            padding: 0.5rem;
+        }
+
+        .no-project p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Project Forms */
+        .project-form {
+            padding: 0.75rem;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            margin-top: 0.5rem;
+        }
+
+        .project-form h4 {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .project-form input,
+        .project-form textarea,
+        .project-form select {
+            width: 100%;
+            padding: 0.4rem 0.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .project-form textarea {
+            resize: vertical;
+        }
+
+        .project-form input:focus,
+        .project-form textarea:focus,
+        .project-form select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .form-buttons button {
+            flex: 1;
+            padding: 0.4rem;
+            font-size: 0.8rem;
+        }
+
+        .cancel-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .cancel-btn:hover {
+            background: var(--bg-tertiary);
+        }
+
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            min-width: 280px;
+        }
+
+        .modal-content h4 {
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+        }
+
+        .modal-content p {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            margin-bottom: 0.75rem;
+        }
     </style>
 </head>
 <body hx-ext="ws" ws-connect="/ws">
@@ -694,7 +991,13 @@
                     <p><span class="label">Mode:</span> <span>{{ status.mode }}</span></p>
                     <p><span class="label">Round:</span> <span>{{ status.current_round }}</span></p>
                 </div>
-                <button onclick="clearMessages()" style="width: 100%; margin-top: 0.5rem;" class="danger-btn">Clear Messages</button>
+            </div>
+
+            <div class="sidebar-section" id="project-panel" hx-get="/project-panel" hx-trigger="load, every 5s">
+                <h2>Project</h2>
+                <div id="project-content">
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">Loading...</p>
+                </div>
             </div>
 
             <div class="sidebar-section" id="rooms-panel">
@@ -708,6 +1011,13 @@
                 </div>
             </div>
 
+            <div class="sidebar-section" id="artifacts-panel">
+                <h2>Agent Files</h2>
+                <div id="artifacts-list" style="max-height: 150px; overflow-y: auto;">
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">Loading...</p>
+                </div>
+            </div>
+
             <div class="sidebar-section agents-section" id="agents-panel">
                 <h2>Agents ({{ agents|length }})</h2>
                 <div id="agents-list" hx-get="/agents-list" hx-trigger="every 5s">
@@ -715,7 +1025,7 @@
                         {% for agent in agents %}
                         <li>
                             <span class="agent-name">
-                                <span class="status-dot {{ agent.status.value }}"></span>
+                                <span class="status-dot {{ agent.status }}"></span>
                                 {{ agent.name }}
                             </span>
                             <span class="agent-actions">
@@ -894,6 +1204,39 @@
                     updateTypingIndicator();
                     return;
                 }
+
+                // Handle tool use events
+                if (data.type === 'tool_use') {
+                    const inputStr = data.input ? (typeof data.input === 'object' ? JSON.stringify(data.input, null, 2) : String(data.input)) : '';
+                    const inputPreview = inputStr.slice(0, 500) + (inputStr.length > 500 ? '...' : '');
+                    const toolHtml = `
+                        <div class="message tool-message" style="background: #1c2128; border-left: 3px solid #f0883e; padding: 0.5rem 1rem; margin: 0.25rem 0; font-size: 0.85rem;">
+                            <span style="color: #f0883e;">🔧</span>
+                            <strong style="color: #7ee787;">${data.agent_name}</strong>
+                            <span style="color: #8b949e;"> using </span>
+                            <code style="background: #30363d; padding: 0.1rem 0.3rem; border-radius: 3px; color: #79c0ff;">${data.tool_name}</code>
+                            ${inputPreview ? `<pre style="color: #8b949e; margin: 0.5rem 0 0 0; padding: 0.5rem; background: #0d1117; border-radius: 4px; font-size: 0.75rem; white-space: pre-wrap; max-height: 150px; overflow: auto;">${inputPreview.replace(/</g, '&lt;')}</pre>` : ''}
+                        </div>`;
+                    messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    return;
+                }
+
+                // Handle tool result events
+                if (data.type === 'tool_result') {
+                    const statusColor = data.is_error ? '#f85149' : '#3fb950';
+                    const statusIcon = data.is_error ? '❌' : '✓';
+                    const resultPreview = data.result ? data.result.slice(0, 500) + (data.result.length > 500 ? '...' : '') : '';
+                    const toolHtml = `
+                        <div class="message tool-result-message" style="background: #1c2128; border-left: 3px solid ${statusColor}; padding: 0.5rem 1rem; margin: 0.25rem 0 0.5rem 1rem; font-size: 0.8rem;">
+                            <span style="color: ${statusColor};">${statusIcon}</span>
+                            <code style="color: #8b949e;">${data.tool_name}</code>
+                            ${resultPreview ? `<pre style="color: #6e7681; margin: 0.5rem 0 0 0; padding: 0.5rem; background: #0d1117; border-radius: 4px; font-family: monospace; white-space: pre-wrap; max-height: 150px; overflow: auto;">${resultPreview.replace(/</g, '&lt;')}</pre>` : ''}
+                        </div>`;
+                    messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    return;
+                }
             } catch (e) {
                 // Not JSON, it's HTML content
             }
@@ -1024,6 +1367,293 @@
 
         // Refresh rooms list periodically
         setInterval(loadRooms, 10000);
+
+        // === Artifacts ===
+
+        async function loadArtifacts() {
+            try {
+                const currentRoom = window.location.pathname.startsWith('/r/')
+                    ? window.location.pathname.split('/r/')[1]
+                    : 'general';
+
+                const response = await fetch(`/api/artifacts?room=${currentRoom}`);
+                const artifacts = await response.json();
+                const artifactsList = document.getElementById('artifacts-list');
+
+                if (artifacts.length === 0) {
+                    artifactsList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.85rem;">No files yet</p>';
+                    return;
+                }
+
+                // Group by agent
+                const byAgent = {};
+                for (const a of artifacts) {
+                    const agentName = a.agent_id === '_shared_' ? 'Shared' : (a.agent_id.slice(0, 8) + '...');
+                    if (!byAgent[agentName]) byAgent[agentName] = [];
+                    byAgent[agentName].push(a);
+                }
+
+                let html = '<ul style="list-style: none; font-size: 0.85rem;">';
+                for (const [agent, files] of Object.entries(byAgent)) {
+                    for (const file of files) {
+                        html += `<li style="padding: 0.25rem 0; cursor: pointer;" onclick="viewArtifact('${file.room_id}', '${file.agent_id}', '${file.path}')">
+                            <span style="color: var(--text-secondary);">📄</span>
+                            <span style="color: var(--accent);">${file.path.split('/').pop()}</span>
+                        </li>`;
+                    }
+                }
+                html += '</ul>';
+                artifactsList.innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load artifacts:', error);
+            }
+        }
+
+        async function viewArtifact(roomId, agentId, path) {
+            try {
+                const response = await fetch(`/api/artifacts/${roomId}/${agentId}${path}`);
+                const artifact = await response.json();
+
+                // Create modal
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;';
+                modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+                const content = document.createElement('div');
+                content.style.cssText = 'background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;max-width:800px;max-height:80vh;overflow:auto;padding:1.5rem;min-width:500px;';
+
+                content.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                        <h3 style="color:var(--accent);">${artifact.path}</h3>
+                        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;">×</button>
+                    </div>
+                    <pre style="background:var(--bg-primary);padding:1rem;border-radius:4px;overflow:auto;white-space:pre-wrap;font-size:0.9rem;line-height:1.5;">${escapeHtml(artifact.content)}</pre>
+                    <p style="color:var(--text-secondary);font-size:0.8rem;margin-top:1rem;">Updated: ${new Date(artifact.updated_at).toLocaleString()}</p>
+                `;
+
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+            } catch (error) {
+                console.error('Failed to load artifact:', error);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load artifacts on page load
+        loadArtifacts();
+
+        // Refresh artifacts periodically
+        setInterval(loadArtifacts, 10000);
+
+        // === Project Management ===
+
+        let currentProjectId = null;
+
+        function showCreateProjectForm() {
+            document.getElementById('create-project-form').style.display = 'block';
+            document.getElementById('project-name-input').focus();
+        }
+
+        function hideCreateProjectForm() {
+            document.getElementById('create-project-form').style.display = 'none';
+            document.getElementById('project-name-input').value = '';
+            document.getElementById('project-goal-input').value = '';
+        }
+
+        async function createProject() {
+            const name = document.getElementById('project-name-input').value.trim();
+            const goal = document.getElementById('project-goal-input').value.trim();
+
+            if (!name || !goal) {
+                alert('Please enter both name and goal');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, goal, roomId: getCurrentRoom() })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    currentProjectId = data.projectId;
+                    hideCreateProjectForm();
+                    htmx.ajax('GET', '/project-panel', '#project-panel');
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + err.error);
+                }
+            } catch (error) {
+                console.error('Failed to create project:', error);
+            }
+        }
+
+        function showAddTaskForm() {
+            document.getElementById('add-task-form').style.display = 'block';
+            document.getElementById('task-title-input').focus();
+        }
+
+        function hideAddTaskForm() {
+            document.getElementById('add-task-form').style.display = 'none';
+            document.getElementById('task-title-input').value = '';
+            document.getElementById('task-desc-input').value = '';
+        }
+
+        async function addTask() {
+            const title = document.getElementById('task-title-input').value.trim();
+            const description = document.getElementById('task-desc-input').value.trim();
+
+            if (!title || !description) {
+                alert('Please enter both title and description');
+                return;
+            }
+
+            // Get current project ID from panel
+            const projectId = await getCurrentProjectId();
+            if (!projectId) {
+                alert('No active project');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/projects/${projectId}/tasks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description })
+                });
+
+                if (response.ok) {
+                    hideAddTaskForm();
+                    htmx.ajax('GET', '/project-panel', '#project-panel');
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + err.error);
+                }
+            } catch (error) {
+                console.error('Failed to add task:', error);
+            }
+        }
+
+        function showAssignModal(taskId, taskTitle) {
+            document.getElementById('assign-modal').style.display = 'flex';
+            document.getElementById('assign-task-id').value = taskId;
+            document.getElementById('assign-task-title').textContent = taskTitle;
+        }
+
+        function hideAssignModal() {
+            document.getElementById('assign-modal').style.display = 'none';
+        }
+
+        async function assignTask() {
+            const taskId = document.getElementById('assign-task-id').value;
+            const select = document.getElementById('agent-select');
+            const agentId = select.value;
+            const agentName = select.options[select.selectedIndex].getAttribute('data-name');
+
+            const projectId = await getCurrentProjectId();
+            if (!projectId) {
+                alert('No active project');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/projects/${projectId}/tasks/${taskId}/assign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agentId, agentName })
+                });
+
+                if (response.ok) {
+                    hideAssignModal();
+                    htmx.ajax('GET', '/project-panel', '#project-panel');
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + err.error);
+                }
+            } catch (error) {
+                console.error('Failed to assign task:', error);
+            }
+        }
+
+        async function advancePhase() {
+            const projectId = await getCurrentProjectId();
+            if (!projectId) {
+                alert('No active project');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/projects/${projectId}/advance`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    htmx.ajax('GET', '/project-panel', '#project-panel');
+                } else {
+                    const err = await response.json();
+                    alert('Error: ' + err.error);
+                }
+            } catch (error) {
+                console.error('Failed to advance phase:', error);
+            }
+        }
+
+        async function getCurrentProjectId() {
+            try {
+                const response = await fetch('/api/projects');
+                const data = await response.json();
+                if (data.projects && data.projects.length > 0) {
+                    return data.projects[data.projects.length - 1];
+                }
+            } catch (error) {
+                console.error('Failed to get current project:', error);
+            }
+            return null;
+        }
+
+        function getCurrentRoom() {
+            return window.location.pathname.startsWith('/r/')
+                ? window.location.pathname.split('/r/')[1]
+                : 'general';
+        }
+
+        // Handle WebSocket project updates
+        document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
+            try {
+                const data = JSON.parse(evt.detail.message);
+                if (data.type === 'phase_changed' || data.type === 'task_updated') {
+                    htmx.ajax('GET', '/project-panel', '#project-panel');
+                }
+                if (data.type === 'build_progress') {
+                    // Could add build progress indicator here
+                    console.log(`Build progress: ${data.agentName} - ${data.toolCallCount}/${data.maxToolCalls}`);
+                }
+            } catch (e) {
+                // Not JSON or not a project update
+            }
+        });
+
+        // Close modal on escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                hideAssignModal();
+                hideCreateProjectForm();
+                hideAddTaskForm();
+            }
+        });
+
+        // Close modal on backdrop click
+        document.getElementById('assign-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) hideAssignModal();
+        });
     </script>
 </body>
 </html>

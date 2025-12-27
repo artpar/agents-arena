@@ -10,3 +10,4 @@
 </select>
 <label for="max-turns" style="margin-left: 0.5rem;">Turns:</label>
 <input type="number" id="max-turns" name="maxTurns" value="{{ status.max_turns or 20 }}" min="1" max="100" title="Max turns" style="width: 50px;">
+<button hx-delete="/api/messages" hx-confirm="Clear all messages?" hx-on::after-request="htmx.ajax('GET', '/messages', '#messages'); if(typeof loadArtifacts === 'function') loadArtifacts();" style="margin-left: 0.5rem;">🗑 Clear</button>
