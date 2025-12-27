@@ -1,6 +1,6 @@
 /**
  * Agent class using Anthropic SDK for Node.js.
- * Now with SQLite persistence.
+ * Now with SQLite persistence and tool support.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -8,6 +8,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { AgentStatus, AgentConfig, PersonalityTraits, AgentData } from '../core/types.js';
 import { Message } from '../core/message.js';
 import * as db from '../core/database.js';
+import {
+  ToolContext,
+  getAllToolDefinitions,
+  executeTool,
+  getAgentWorkspace,
+  getSharedWorkspace
+} from '../tools/index.js';
 
 // Model name mapping
 const MODEL_MAP: Record<string, string> = {
@@ -31,7 +38,7 @@ export class Agent {
   status: AgentStatus;
   last_spoke_at: Date | null;
   message_count: number;
-  conversation_history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  conversation_history: Anthropic.MessageParam[];
 
   // Concrete persona fields
   background: string;
@@ -42,7 +49,15 @@ export class Agent {
   blind_spots: string[];
   communication_quirks: string[];
 
+  // Expertise dependencies
+  needs_before_contributing: string[];
+  asks_for_info_from: Record<string, string>;
+
   private _client: Anthropic | null = null;
+
+  // Callback for tool use events (set by world for broadcasting)
+  onToolUse?: (event: { agentId: string; agentName: string; toolName: string; input: unknown }) => void;
+  onToolResult?: (event: { agentId: string; agentName: string; toolName: string; result: string; isError: boolean }) => void;
 
   constructor(config: AgentConfig) {
     this.id = config.id || uuidv4();
@@ -63,6 +78,10 @@ export class Agent {
     this.current_obsession = config.current_obsession || '';
     this.blind_spots = config.blind_spots || [];
     this.communication_quirks = config.communication_quirks || [];
+
+    // Expertise dependencies
+    this.needs_before_contributing = config.needs_before_contributing || [];
+    this.asks_for_info_from = config.asks_for_info_from || {};
 
     // Map model names
     const modelInput = config.model || 'claude-haiku-4-5-20251001';
@@ -105,11 +124,82 @@ export class Agent {
       prompt += `\nSpeaking style: ${this.speaking_style}\n`;
     }
 
-    // Minimal format rules only - personality comes from description
+    // Add expertise and dependencies
+    if (this.expertise.length > 0) {
+      prompt += `\nYOU PROVIDE (your expertise - others will ask you for this):
+${this.expertise.map(e => `• ${e}`).join('\n')}
+`;
+    }
+
+    if (this.needs_before_contributing.length > 0) {
+      prompt += `\nYOU NEED BEFORE CONTRIBUTING:
+${this.needs_before_contributing.map(n => `• ${n}`).join('\n')}
+`;
+    }
+
+    if (Object.keys(this.asks_for_info_from).length > 0) {
+      prompt += `\nWHO TO ASK:
+${Object.entries(this.asks_for_info_from).map(([info, role]) => `• "${info}" → ask the ${role}`).join('\n')}
+
+When you need information, @mention the specific person who can provide it.
+If you're missing info you need, ASK for it before proceeding.
+When someone asks about your expertise, provide a clear, actionable answer.
+`;
+    }
+
+    // Workspace and tools info
     prompt += `
-FORMAT:
-- @Name to address someone directly
-- Keep responses short (1-3 sentences)
+YOUR TOOLS - Use the RIGHT tool:
+
+1. str_replace_based_edit_tool - For CODE and structured files
+   - Write actual code (scripts, config files, source code)
+   - Use command: 'create' with path and file_text
+   - Use command: 'view' to see existing files
+   - Files persist in your workspace
+
+2. memory - For notes and quick records
+   - Store meeting notes, decisions, quick references
+   - Use 'view' first to check what exists
+   - Good for temporary working notes
+
+3. bash - For running commands and getting real data
+   - Run calculations, process data, check system state
+   - Execute scripts you've written
+   - Get current date/time, file listings, etc.
+
+4. web_search - For current information
+   - Look up facts, prices, statistics
+   - Research competitors, market data
+   - Find documentation or best practices
+
+PICK THE RIGHT TOOL:
+- Writing code → str_replace_based_edit_tool
+- Need current info → web_search
+- Need to calculate/process → bash
+- Quick notes → memory
+
+ACTION MODE - NO MORE MEETINGS
+
+You are a DOER, not a TALKER. When given a task:
+
+DO:
+- Take immediate action using your tools
+- Create deliverables (documents, analyses, code, files)
+- Make decisions and state them clearly
+- Use the APPROPRIATE tool for the task
+- Report what you COMPLETED
+
+DO NOT:
+- Say "I'll work on X" - just DO it now
+- Schedule future meetings or syncs
+- Say "let's discuss" or "we should talk about"
+- Write vague plans without concrete deliverables
+- Defer action to later
+
+RESPONSE FORMAT:
+- 1-2 sentences max
+- State what you DID or DECIDED
+- If you used a tool, say what you created
 `;
 
     return prompt;
@@ -144,8 +234,9 @@ FORMAT:
 
   /**
    * Execute one step - generate a response to the current chat context.
+   * Implements agentic loop for tool execution.
    */
-  async step(chatContext: string): Promise<string | null> {
+  async step(chatContext: string, roomId: string): Promise<string | null> {
     // Connect on first use if not already connected
     if (!this._client) {
       await this.connect();
@@ -160,7 +251,8 @@ FORMAT:
 
 ${chatContext}
 
-Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, nothing else.`;
+Now respond as ${this.name}. Stay in character and keep it brief.
+Use your tools if you need to take action or remember something.`;
 
       // Add to conversation history
       this.conversation_history.push({
@@ -173,22 +265,131 @@ Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, 
         this.conversation_history = this.conversation_history.slice(-40);
       }
 
-      // Call Anthropic API
-      const response = await this._client.messages.create({
+      // Get tool definitions
+      const tools = getAllToolDefinitions();
+
+      // Build tool context
+      const toolCtx: ToolContext = {
+        roomId,
+        agentId: this.id,
+        agentName: this.name,
+        workDir: getAgentWorkspace(roomId, this.id),
+        sharedDir: getSharedWorkspace(roomId)
+      };
+
+      // Call Anthropic API with tools
+      let response = await this._client.messages.create({
         model: this.model,
         max_tokens: 10000,
         system: this.system_prompt,
         messages: this.conversation_history,
-        temperature: this.temperature
+        temperature: this.temperature,
+        tools: tools as Anthropic.Tool[]
       });
 
-      // Extract response text
-      const responseText = (response.content[0] as { type: 'text'; text: string }).text.trim();
+      // Agentic loop - process tool calls until done
+      let loopCount = 0;
+      const maxLoops = 10; // Safety limit
 
-      // Add assistant response to history
+      while (response.stop_reason === 'tool_use' && loopCount < maxLoops) {
+        loopCount++;
+        console.log(`Agent ${this.name} using tools (loop ${loopCount})...`);
+
+        // Add assistant response to history
+        this.conversation_history.push({
+          role: 'assistant',
+          content: response.content
+        });
+
+        // Process each tool use block
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+        for (const block of response.content) {
+          if (block.type === 'tool_use') {
+            console.log(`  Tool: ${block.name}`);
+
+            // Log tool use to database
+            db.logEvent('tool_use', {
+              agent_id: this.id,
+              agent_name: this.name,
+              tool_name: block.name,
+              tool_input: block.input,
+              room_id: roomId
+            });
+
+            // Emit tool use event for UI
+            if (this.onToolUse) {
+              this.onToolUse({
+                agentId: this.id,
+                agentName: this.name,
+                toolName: block.name,
+                input: block.input
+              });
+            }
+
+            const result = await executeTool(block.name, block.input as Record<string, unknown>, toolCtx);
+
+            // Log tool result
+            db.logEvent('tool_result', {
+              agent_id: this.id,
+              agent_name: this.name,
+              tool_name: block.name,
+              is_error: result.is_error || false,
+              result_length: result.content.length
+            });
+
+            // Emit tool result event for UI
+            if (this.onToolResult) {
+              this.onToolResult({
+                agentId: this.id,
+                agentName: this.name,
+                toolName: block.name,
+                result: result.content.slice(0, 500),  // Truncate for UI
+                isError: result.is_error || false
+              });
+            }
+
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: result.content,
+              is_error: result.is_error
+            });
+          }
+        }
+
+        // Add tool results to history
+        this.conversation_history.push({
+          role: 'user',
+          content: toolResults
+        });
+
+        // Continue the conversation
+        response = await this._client.messages.create({
+          model: this.model,
+          max_tokens: 10000,
+          system: this.system_prompt,
+          messages: this.conversation_history,
+          temperature: this.temperature,
+          tools: tools as Anthropic.Tool[]
+        });
+      }
+
+      // Extract text from final response
+      const textBlocks = response.content.filter(
+        (block): block is Anthropic.TextBlock => block.type === 'text'
+      );
+      const responseText = textBlocks.map(b => b.text).join('\n').trim();
+
+      // No response? Don't touch history, return null
+      if (!responseText) {
+        return null;
+      }
+
+      // Has content - add to history
       this.conversation_history.push({
         role: 'assistant',
-        content: responseText
+        content: response.content
       });
 
       this.status = AgentStatus.SPEAKING;
@@ -214,8 +415,8 @@ Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, 
   /**
    * Generate a response (alias for step).
    */
-  async respond(context: string): Promise<string | null> {
-    return this.step(context);
+  async respond(context: string, roomId: string): Promise<string | null> {
+    return this.step(context, roomId);
   }
 
   /**
@@ -280,7 +481,10 @@ Now respond as ${this.name}. Keep it brief (1-2 sentences). Just your response, 
       model: this.model,
       status: this.status,
       message_count: this.message_count,
-      last_spoke_at: this.last_spoke_at?.toISOString() || null
+      last_spoke_at: this.last_spoke_at?.toISOString() || null,
+      expertise: this.expertise,
+      needs_before_contributing: this.needs_before_contributing,
+      asks_for_info_from: this.asks_for_info_from
     };
   }
 }

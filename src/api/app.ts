@@ -7,28 +7,26 @@ import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import nunjucks from 'nunjucks';
-import yaml from 'js-yaml';
 import Anthropic from '@anthropic-ai/sdk';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { ArenaWorld } from '../arena/world.js';
 import { Agent } from '../agents/agent.js';
-import { loadAgentConfig } from '../agents/loader.js';
 import { ScheduleMode, MessageType, Attachment } from '../core/types.js';
 import { Message } from '../core/message.js';
 import { Event } from '../core/events.js';
 import * as db from '../core/database.js';
+import * as actorIntegration from '../actors/actor-integration.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Template directory
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
-const CONFIGS_DIR = join(__dirname, '..', '..', 'configs', 'agents');
 const UPLOADS_DIR = join(__dirname, '..', '..', 'uploads');
 
 // Ensure uploads directory exists
@@ -147,6 +145,28 @@ export function createApp(world?: ArenaWorld) {
     }));
   });
 
+  // Subscribe to tool events for timeline display
+  world.eventBus.subscribe('tool_use', (event: Event) => {
+    const data = event.data as { agentId: string; agentName: string; toolName: string; input: unknown };
+    manager.broadcast(JSON.stringify({
+      type: 'tool_use',
+      agent_name: data.agentName,
+      tool_name: data.toolName,
+      input: data.input
+    }));
+  });
+
+  world.eventBus.subscribe('tool_result', (event: Event) => {
+    const data = event.data as { agentId: string; agentName: string; toolName: string; result: string; isError: boolean };
+    manager.broadcast(JSON.stringify({
+      type: 'tool_result',
+      agent_name: data.agentName,
+      tool_name: data.toolName,
+      result: data.result,
+      is_error: data.isError
+    }));
+  });
+
   // === HTML Routes ===
 
   app.get('/', (req: Request, res: Response) => {
@@ -159,8 +179,34 @@ export function createApp(world?: ArenaWorld) {
 
   app.get('/messages', (req: Request, res: Response) => {
     const channel = world!.getChannel(world!.defaultChannel);
-    const messages = channel ? channel.getRecentMessages(50).map(m => m.toDict()) : [];
-    res.render('partials/messages.html', { messages });
+    const messages = channel ? channel.getRecentMessages(50).map(m => ({
+      type: 'message',
+      timestamp: m.timestamp.toISOString(),
+      ...m.toDict()
+    })) : [];
+
+    // Get tool events
+    const toolEvents = db.getEventLog(undefined, undefined, 200)
+      .filter(e => e.event_type === 'tool_use' || e.event_type === 'tool_result')
+      .map(e => {
+        const data = JSON.parse(e.event_data);
+        return {
+          type: e.event_type,
+          timestamp: e.created_at,
+          agent_name: data.agent_name,
+          tool_name: data.tool_name,
+          tool_input: data.tool_input,
+          is_error: data.is_error,
+          result_length: data.result_length
+        };
+      });
+
+    // Merge and sort by timestamp
+    const timeline = [...messages, ...toolEvents]
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .slice(-100);
+
+    res.render('partials/messages.html', { messages: timeline });
   });
 
   app.get('/agents-list', (req: Request, res: Response) => {
@@ -183,10 +229,37 @@ export function createApp(world?: ArenaWorld) {
     });
   });
 
+  app.get('/project-panel', async (req: Request, res: Response) => {
+    const projects = actorIntegration.listProjects();
+    let project = null;
+
+    if (projects.length > 0) {
+      // Get the most recent project's status
+      const projectId = projects[projects.length - 1];
+      const status = await actorIntegration.getProjectStatus(projectId);
+      if (status) {
+        project = {
+          id: projectId,
+          name: projectId.replace('proj-', 'Project '),
+          goal: 'Work in progress',
+          phase: status.phase,
+          tasks: status.tasks,
+          turnCount: status.turnCount
+        };
+      }
+    }
+
+    res.render('partials/project.html', {
+      project,
+      agents: world!.registry.all()
+    });
+  });
+
   // === Actions ===
 
   app.post('/send', upload.array('files', 5), async (req: Request, res: Response) => {
-    const { content, sender = 'Human' } = req.body;
+    const { sender = 'Human' } = req.body;
+    const messageContent = req.body.content?.trim();
     const files = req.files as Express.Multer.File[] | undefined;
 
     // Build attachments array from uploaded files
@@ -203,7 +276,13 @@ export function createApp(world?: ArenaWorld) {
       }
     }
 
-    await world!.injectMessage(content || '', sender, undefined, attachments.length > 0 ? attachments : undefined);
+    // Reject empty messages at the boundary
+    if (!messageContent && attachments.length === 0) {
+      res.status(400).json({ error: 'Message content required' });
+      return;
+    }
+
+    await world!.injectMessage(messageContent || '[Attachment]', sender, undefined, attachments.length > 0 ? attachments : undefined);
     res.send(''); // HTMX will update via WebSocket
   });
 
@@ -357,12 +436,19 @@ export function createApp(world?: ArenaWorld) {
 
   app.post('/agents/add', async (req: Request, res: Response) => {
     try {
-      let configPath = req.body.config_path;
-      if (!existsSync(configPath)) {
-        configPath = join(CONFIGS_DIR, `${configPath}.yaml`);
+      // Accept agent config directly in request body
+      const config = req.body;
+
+      if (!config.name) {
+        res.status(400).json({ error: 'Agent name is required' });
+        return;
       }
 
-      const config = loadAgentConfig(configPath);
+      // Generate ID if not provided
+      if (!config.id) {
+        config.id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+
       const agent = Agent.fromConfig(config);
       await world!.addAgent(agent);
 
@@ -404,8 +490,8 @@ export function createApp(world?: ArenaWorld) {
       thinking: true
     });
 
-    // Have agent step
-    const responseText = await agent.step(context);
+    // Have agent step (pass roomId for tool context)
+    const responseText = await agent.step(context, channel.id);
 
     // Emit thinking done event
     world!.eventBus.emitEvent('agent_thinking', {
@@ -456,6 +542,50 @@ export function createApp(world?: ArenaWorld) {
     }
   });
 
+  // Combined timeline with messages AND tool events
+  app.get('/api/timeline', (req: Request, res: Response) => {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const roomName = req.query.room as string || world!.defaultChannel;
+    const channel = world!.getChannel(roomName);
+
+    if (!channel) {
+      res.json([]);
+      return;
+    }
+
+    // Get messages
+    const messages = channel.getRecentMessages(limit).map(m => ({
+      type: 'message',
+      timestamp: m.timestamp.toISOString(),
+      data: m.toDict()
+    }));
+
+    // Get tool events from event_log
+    const toolEvents = db.getEventLog(undefined, undefined, limit * 2)
+      .filter(e => e.event_type === 'tool_use' || e.event_type === 'tool_result')
+      .map(e => {
+        const data = JSON.parse(e.event_data);
+        return {
+          type: e.event_type,
+          timestamp: e.created_at,
+          data: {
+            agent_name: data.agent_name,
+            tool_name: data.tool_name,
+            input: data.tool_input,
+            result: data.result_length ? `(${data.result_length} chars)` : undefined,
+            is_error: data.is_error
+          }
+        };
+      });
+
+    // Merge and sort by timestamp
+    const timeline = [...messages, ...toolEvents]
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .slice(-limit);
+
+    res.json(timeline);
+  });
+
   app.delete('/api/messages/:messageId', (req: Request, res: Response) => {
     const { messageId } = req.params;
     const deleted = db.deleteMessage(messageId);
@@ -496,6 +626,52 @@ export function createApp(world?: ArenaWorld) {
     res.json(db.getEventLog(sessionId, eventType, limit));
   });
 
+  // === Artifacts API ===
+
+  app.get('/api/artifacts', (req: Request, res: Response) => {
+    const roomName = req.query.room as string;
+    const agentId = req.query.agent as string | undefined;
+
+    if (!roomName) {
+      res.status(400).json({ error: 'room parameter required' });
+      return;
+    }
+
+    // Look up room by name to get ID
+    const room = db.getRoom(roomName);
+    if (!room) {
+      res.json([]); // No room, no artifacts
+      return;
+    }
+    const roomId = room.id;
+
+    if (agentId) {
+      res.json(db.listArtifacts(roomId, agentId));
+    } else {
+      // Get all artifacts for room (all agents + shared)
+      const allAgents = db.getAllAgents();
+      const artifacts: db.ArtifactRow[] = [];
+      for (const agent of allAgents) {
+        artifacts.push(...db.listArtifacts(roomId, agent.id));
+      }
+      // Also get shared artifacts
+      artifacts.push(...db.listArtifacts(roomId, '_shared_'));
+      res.json(artifacts);
+    }
+  });
+
+  app.get('/api/artifacts/:roomId/:agentId/*', (req: Request, res: Response) => {
+    const { roomId, agentId } = req.params;
+    const path = '/' + req.params[0]; // The wildcard part
+
+    const artifact = db.getArtifact(roomId, agentId, path);
+    if (!artifact) {
+      res.status(404).json({ error: 'Artifact not found' });
+      return;
+    }
+    res.json(artifact);
+  });
+
   app.get('/api/history/messages', (req: Request, res: Response) => {
     const roomId = req.query.room as string;
     const limit = parseInt(req.query.limit as string) || 50;
@@ -530,15 +706,106 @@ export function createApp(world?: ArenaWorld) {
     })));
   });
 
+  // === Project API (Actor-based) ===
+
+  app.post('/api/projects', async (req: Request, res: Response) => {
+    const { name, goal, roomId = 'general' } = req.body;
+
+    if (!name || !goal) {
+      res.status(400).json({ error: 'name and goal are required' });
+      return;
+    }
+
+    try {
+      const { projectId } = await actorIntegration.createProject({
+        name,
+        goal,
+        roomId
+      });
+      res.json({ status: 'created', projectId });
+    } catch (err) {
+      res.status(500).json({ error: `Failed to create project: ${err}` });
+    }
+  });
+
+  app.get('/api/projects', (req: Request, res: Response) => {
+    const projects = actorIntegration.listProjects();
+    res.json({ projects });
+  });
+
+  app.get('/api/projects/:projectId', async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+
+    const status = await actorIntegration.getProjectStatus(projectId);
+    if (!status) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    res.json(status);
+  });
+
+  app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const { title, description, priority } = req.body;
+
+    if (!title || !description) {
+      res.status(400).json({ error: 'title and description are required' });
+      return;
+    }
+
+    actorIntegration.addTask(projectId, title, description, priority);
+    res.json({ status: 'added' });
+  });
+
+  app.post('/api/projects/:projectId/tasks/:taskId/assign', (req: Request, res: Response) => {
+    const { projectId, taskId } = req.params;
+    const { agentId, agentName } = req.body;
+
+    if (!agentId || !agentName) {
+      res.status(400).json({ error: 'agentId and agentName are required' });
+      return;
+    }
+
+    actorIntegration.assignTask(projectId, taskId, agentId, agentName);
+    res.json({ status: 'assigned' });
+  });
+
+  app.post('/api/projects/:projectId/advance', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+
+    actorIntegration.advancePhase(projectId);
+    res.json({ status: 'advancing' });
+  });
+
+  // === Actor-based Agent Step ===
+
+  app.post('/api/actors/agents/:agentId/step', async (req: Request, res: Response) => {
+    const { agentId } = req.params;
+    const { roomId = 'general' } = req.body;
+
+    try {
+      const response = await actorIntegration.triggerAgentResponse(agentId, roomId);
+      if (response) {
+        res.json({ status: 'ok', response: response.slice(0, 200) + (response.length > 200 ? '...' : '') });
+      } else {
+        res.status(500).json({ error: 'Agent did not respond' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: `Failed to trigger agent: ${err}` });
+    }
+  });
+
   // === Lifecycle Management ===
 
   app.post('/api/shutdown', (req: Request, res: Response) => {
     res.json({ status: 'shutting_down' });
 
     // Graceful shutdown
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log('\nGraceful shutdown requested via API...');
       world!.stop();
+      await actorIntegration.shutdownActorSystem();
       db.closeDatabase();
       server.close(() => {
         console.log('Server closed');
@@ -550,21 +817,38 @@ export function createApp(world?: ArenaWorld) {
   // === Persona Management ===
 
   app.get('/personas', (req: Request, res: Response) => {
-    const personas = loadPersonaConfigs();
+    const agents = world!.registry.all();
     res.render('personas.html', {
-      personas,
-      active_agents: world!.registry.all().map(a => a.toDict())
+      personas: agents.map(a => a.toDict()),
+      active_agents: agents.map(a => a.toDict())
     });
   });
 
   app.get('/api/personas', (req: Request, res: Response) => {
-    res.json(loadPersonaConfigs());
+    // Return all agents from registry
+    const agents = world?.registry.all() || [];
+    res.json(agents.map(a => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      response_tendency: a.response_tendency,
+      temperature: a.temperature,
+      model: a.model,
+      status: a.status,
+      message_count: a.message_count
+    })));
   });
 
   app.post('/api/personas', async (req: Request, res: Response) => {
     const data = req.body;
     if (!data.name) {
       res.status(400).json({ error: 'Name is required' });
+      return;
+    }
+
+    // Check if already exists
+    if (world?.registry.getByName(data.name)) {
+      res.status(400).json({ error: 'Agent with this name already exists' });
       return;
     }
 
@@ -580,24 +864,13 @@ export function createApp(world?: ArenaWorld) {
       model: data.model || 'haiku'
     };
 
-    // Save to YAML file
-    if (!existsSync(CONFIGS_DIR)) {
-      mkdirSync(CONFIGS_DIR, { recursive: true });
-    }
-
-    const filename = data.name.toLowerCase().replace(/ /g, '_');
-    const filepath = join(CONFIGS_DIR, `${filename}.yaml`);
-    writeFileSync(filepath, yaml.dump(config));
-
-    // Add to running world
     try {
       const agent = Agent.fromConfig(config);
       await world!.addAgent(agent);
+      res.json({ status: 'created', id: agent.id, name: agent.name });
     } catch (err) {
-      console.warn(`Persona saved but failed to add to world: ${err}`);
+      res.status(500).json({ error: `Failed to create agent: ${err}` });
     }
-
-    res.json({ status: 'created', filename, path: filepath });
   });
 
   app.post('/api/personas/generate', async (req: Request, res: Response) => {
@@ -607,36 +880,85 @@ export function createApp(world?: ArenaWorld) {
       return;
     }
 
-    const existingPersonas = loadPersonaConfigs();
-    const existingSummary = existingPersonas.map(p =>
-      `- ${p.name}: ${String(p.description || '').slice(0, 100)}`
+    const existingAgents = world?.registry.all() || [];
+    const existingSummary = existingAgents.map(a =>
+      `- ${a.name}: ${a.description.slice(0, 100)}`
     ).join('\n') || 'None yet';
 
-    const systemPrompt = `Create a realistic team member with a clear purpose that drives what they call out.
+    const systemPrompt = `Create a realistic team member using BELBIN TEAM ROLES with personality depth AND clear expertise dependencies.
 
-EXAMPLES OF GOOD DESCRIPTIONS (notice: purpose drives behavior):
+Choose ONE of these 9 Belbin behavioral archetypes:
 
-"Frontend lead. Owns the React codebase. Purpose: ship fast - so she calls out missing specs, blockers, and scope creep. Impatient, wants requirements NOW. Will flag 'I can't start until I have X.'"
+ACTION-ORIENTED:
+• SHAPER: Drives forward, challenges the team, thrives on pressure. May be abrasive.
+• IMPLEMENTER: Turns ideas into action, reliable, disciplined. May be inflexible.
+• COMPLETER-FINISHER: Quality control, catches errors, perfectionist. May slow things down.
 
-"Senior architect. Purpose: prevent rewrites - so he calls out architectural shortcuts, scaling issues, and tech debt. Asks 'what happens at 10x users?' Tends to slow things down with war stories."
+PEOPLE-ORIENTED:
+• COORDINATOR: Clarifies goals, delegates, big picture. May seem controlling.
+• TEAMWORKER: Supports others, harmonizes, diplomatic. May avoid hard decisions.
+• RESOURCE INVESTIGATOR: Brings external ideas, networks, enthusiastic. May lose focus.
 
-"DevOps. Purpose: keep prod stable - so he calls out deployment risks, missing monitoring, and things that'll page him at 3am. Skeptical. 'Who's maintaining this?' Dark humor."
+THINKING-ORIENTED:
+• PLANT: Creative problem-solver, novel ideas. May ignore practical constraints.
+• MONITOR-EVALUATOR: Analyzes options, strategic, objective. May seem cold or critical.
+• SPECIALIST: Deep domain expertise, dedicated. May miss broader context.
 
-"QA lead. Purpose: prevent prod bugs - so she calls out untested paths, missing error handling, edge cases. Will block releases. 'What happens if the user does X?'"
+═══════════════════════════════════════════════════════════════
+EXPERTISE & DEPENDENCIES - CRITICAL
+═══════════════════════════════════════════════════════════════
 
-BAD DESCRIPTION (no purpose, no behavior):
-"Experienced engineer who values quality. Interested in scalable systems."
+Every persona MUST define:
+1. EXPERTISE - What they know deeply and can provide to others
+2. NEEDS_BEFORE_CONTRIBUTING - What info they need before they can do their job
+3. ASKS_FOR_INFO_FROM - Which ROLES provide each piece of info they need
 
-Create someone with:
-- Role and what they own
-- PURPOSE - what drives them and what they call out because of it
-- Personality and work style
-- Strengths AND flaws
+EXAMPLES:
+
+ARCHITECT (PLANT):
+- expertise: ["system design", "API architecture", "scalability patterns", "technical tradeoffs"]
+- needs: ["product requirements", "security constraints", "timeline expectations"]
+- asks: { "product requirements": "PM", "security constraints": "Security", "timeline": "EM" }
+
+PM/COORDINATOR:
+- expertise: ["product requirements", "user needs", "prioritization", "scope definition"]
+- needs: ["technical feasibility", "effort estimates", "risk assessment"]
+- asks: { "technical feasibility": "Architect", "effort estimates": "Engineers", "risk assessment": "Security" }
+
+SECURITY ENGINEER (MONITOR-EVALUATOR):
+- expertise: ["security constraints", "threat modeling", "compliance", "risk assessment"]
+- needs: ["architecture overview", "data flow", "external integrations"]
+- asks: { "architecture overview": "Architect", "data flow": "Backend", "external integrations": "Architect" }
+
+QA/COMPLETER-FINISHER:
+- expertise: ["test planning", "edge cases", "quality standards", "regression risks"]
+- needs: ["feature specs", "acceptance criteria", "architecture decisions"]
+- asks: { "feature specs": "PM", "acceptance criteria": "PM", "architecture decisions": "Architect" }
+
+BACKEND ENGINEER (IMPLEMENTER):
+- expertise: ["implementation details", "effort estimates", "technical constraints", "API contracts"]
+- needs: ["requirements", "architecture", "security guidelines"]
+- asks: { "requirements": "PM", "architecture": "Architect", "security guidelines": "Security" }
+
+═══════════════════════════════════════════════════════════════
+
+This creates NATURAL conversation flow:
+- David (Architect): "@Maya I need the product requirements before I can design. What's the MVP scope?"
+- Maya (PM): "MVP is X, Y, Z. @Priya what security constraints should David consider?"
+- Priya (Security): "Encrypt at rest, no third-party analytics. @David factor that into your design."
+
+BAD (no dependencies): "Senior engineer who values quality. Good at architecture."
 
 RESPOND WITH JSON:
 {
     "name": "FirstName",
-    "description": "Role, purpose (so they call out X), personality, flaws. 3-5 sentences.",
+    "description": "Belbin role + job title. Behavioral style. Communication pattern. Realistic flaw. 3-5 sentences.",
+    "expertise": ["specific thing they know", "another expertise", "what they provide to team"],
+    "needs_before_contributing": ["info they need", "before they can help"],
+    "asks_for_info_from": {
+        "info they need": "Role who provides it",
+        "other info": "Other Role"
+    },
     "response_tendency": 0.4-0.9,
     "temperature": 0.6-0.85
 }`;
@@ -695,39 +1017,103 @@ Generate the persona JSON:`;
     }
 
     const existingNames = new Set(
-      loadPersonaConfigs().map(p => String(p.name || '').toLowerCase())
+      (world?.registry.all() || []).map(a => a.name.toLowerCase())
     );
 
-    const systemPrompt = `Generate ${count} team members with different PURPOSES that create natural tension.
+    const systemPrompt = `Generate ${count} team members using BELBIN TEAM ROLES with personality depth AND clear expertise dependencies.
 
-Each person has a purpose that drives what they call out. Their purposes sometimes conflict:
-- PM wants to ship fast → calls out scope creep
-- QA wants quality → calls out untested paths
-- Architect wants sustainability → calls out shortcuts
-- DevOps wants stability → calls out deployment risks
+Create BEHAVIORAL DIVERSITY by distributing personas across these psychological archetypes:
 
-EXAMPLE:
-{
-  "name": "Maya",
-  "description": "Backend lead. Purpose: deliver reliable APIs - so she calls out vague specs, changing requirements, and frontend making assumptions. Quiet, just builds. Sometimes ships before fully understanding the ask."
-}
+═══════════════════════════════════════════════════════════════
+ACTION-ORIENTED ROLES (include at least 1-2):
+═══════════════════════════════════════════════════════════════
 
-BAD EXAMPLE (no purpose, no behavior):
-{
-  "name": "Alex",
-  "description": "Experienced engineer who values quality. Has opinions about testing. Interested in scalability."
-}
+• SHAPER: Drives forward, challenges the team, thrives on pressure
+• IMPLEMENTER: Turns ideas into practical action, reliable, disciplined
+• COMPLETER-FINISHER: Quality control, catches errors, ensures nothing is missed
 
-EACH PERSONA NEEDS:
-1. Role and what they own
-2. PURPOSE - and what they call out because of it
-3. Personality (some ship fast, some slow down, some vent, some stay quiet)
-4. Flaws
+═══════════════════════════════════════════════════════════════
+PEOPLE-ORIENTED ROLES (include at least 1-2):
+═══════════════════════════════════════════════════════════════
+
+• COORDINATOR: Clarifies goals, delegates, maintains big picture
+• TEAMWORKER: Supports others, harmonizes conflicts, puts team first
+• RESOURCE INVESTIGATOR: Brings external ideas, networks, enthusiastic
+
+═══════════════════════════════════════════════════════════════
+THINKING-ORIENTED ROLES (include at least 1-2):
+═══════════════════════════════════════════════════════════════
+
+• PLANT: Creative problem-solver, generates novel ideas
+• MONITOR-EVALUATOR: Analyzes options objectively, sees pros/cons
+• SPECIALIST: Deep expertise in specific domain
+
+═══════════════════════════════════════════════════════════════
+EXPERTISE & DEPENDENCIES - CRITICAL FOR EACH PERSONA
+═══════════════════════════════════════════════════════════════
+
+Every persona MUST define:
+1. EXPERTISE - What they know deeply and can provide to others
+2. NEEDS_BEFORE_CONTRIBUTING - What info they need before they can do their job
+3. ASKS_FOR_INFO_FROM - Which ROLES (not names) provide each piece of info
+
+EXAMPLE TEAM WITH INTERLOCKING DEPENDENCIES:
+
+Maya (PM/COORDINATOR):
+- expertise: ["product requirements", "user needs", "prioritization", "MVP scope"]
+- needs: ["technical feasibility", "effort estimates", "security risks"]
+- asks: { "technical feasibility": "Architect", "effort estimates": "Engineer", "security risks": "Security" }
+
+David (ARCHITECT/PLANT):
+- expertise: ["system design", "API architecture", "scalability", "technical tradeoffs"]
+- needs: ["product requirements", "security constraints", "timeline"]
+- asks: { "product requirements": "PM", "security constraints": "Security", "timeline": "PM" }
+
+Priya (SECURITY/MONITOR-EVALUATOR):
+- expertise: ["security constraints", "threat modeling", "compliance", "risk assessment"]
+- needs: ["architecture overview", "data sensitivity", "external integrations"]
+- asks: { "architecture overview": "Architect", "data sensitivity": "PM", "external integrations": "Architect" }
+
+James (BACKEND/IMPLEMENTER):
+- expertise: ["implementation", "effort estimates", "technical constraints", "API contracts"]
+- needs: ["requirements", "architecture decisions", "security guidelines"]
+- asks: { "requirements": "PM", "architecture decisions": "Architect", "security guidelines": "Security" }
+
+Sarah (QA/COMPLETER-FINISHER):
+- expertise: ["test planning", "edge cases", "quality standards", "user acceptance"]
+- needs: ["feature specs", "acceptance criteria", "architecture decisions"]
+- asks: { "feature specs": "PM", "acceptance criteria": "PM", "architecture decisions": "Architect" }
+
+═══════════════════════════════════════════════════════════════
+THIS CREATES NATURAL CONVERSATION FLOW:
+═══════════════════════════════════════════════════════════════
+
+David: "@Maya I need the product requirements before I can design. What's the MVP scope?"
+Maya: "MVP: save highlights, sync across devices. @Priya what security constraints?"
+Priya: "Encrypt at rest, no third-party analytics. @David factor that into your design."
+David: "Got it. Here's the architecture..." [now has what he needs]
+James: "@David I need the API contracts before I can estimate effort."
+
+Each persona EXPLICITLY asks the right person for what they need.
+
+═══════════════════════════════════════════════════════════════
+
+EVERY PERSONA MUST HAVE:
+1. A Belbin role (how they contribute)
+2. Expertise (what they provide to others)
+3. Dependencies (what they need and who provides it)
+4. Communication style (Driver/Analytical/Expressive/Amiable)
+5. A realistic FLAW
 
 RESPOND WITH JSON ARRAY:
 [{
     "name": "FirstName",
-    "description": "Role, purpose (so they call out X), personality, flaws. 3-5 sentences.",
+    "description": "Belbin role + job title. Behavioral style. Communication pattern. Realistic flaw. 3-5 sentences.",
+    "expertise": ["what they know", "what they provide to team"],
+    "needs_before_contributing": ["info they need first"],
+    "asks_for_info_from": {
+        "info needed": "Role who provides it"
+    },
     "response_tendency": 0.4-0.9,
     "temperature": 0.6-0.85
 }]`;
@@ -769,36 +1155,27 @@ Generate the JSON array of ${count} personas:`;
         return;
       }
 
-      if (!existsSync(CONFIGS_DIR)) {
-        mkdirSync(CONFIGS_DIR, { recursive: true });
-      }
-
-      const saved: Array<{ name: string; filename: string }> = [];
+      const created: Array<{ id: string; name: string }> = [];
 
       for (const persona of personas) {
         persona.model = persona.model || 'haiku';
         persona.system_prompt = persona.system_prompt || '';
 
-        const filename = persona.name.toLowerCase().replace(/ /g, '_');
-        const filepath = join(CONFIGS_DIR, `${filename}.yaml`);
-
-        if (existsSync(filepath)) {
+        // Check if agent with this name already exists
+        if (world?.registry.getByName(persona.name)) {
           continue;
         }
-
-        writeFileSync(filepath, yaml.dump(persona));
 
         try {
           const agent = Agent.fromConfig(persona);
           await world!.addAgent(agent);
+          created.push({ id: agent.id, name: agent.name });
         } catch (err) {
-          console.warn(`Persona ${persona.name} saved but failed to add to world: ${err}`);
+          console.warn(`Failed to create agent ${persona.name}: ${err}`);
         }
-
-        saved.push({ name: persona.name, filename });
       }
 
-      res.json({ status: 'created', count: saved.length, personas: saved });
+      res.json({ status: 'created', count: created.length, personas: created });
     } catch (err) {
       console.error('Team generation error:', err);
       res.status(500).json({ error: `Failed to generate team: ${err}` });
@@ -806,78 +1183,142 @@ Generate the JSON array of ${count} personas:`;
   });
 
   app.post('/api/personas/bulk-delete', (req: Request, res: Response) => {
-    const { filenames = [] } = req.body;
-    if (filenames.length === 0) {
-      res.status(400).json({ error: 'No filenames provided' });
+    const { ids = [], names = [] } = req.body;
+    if (ids.length === 0 && names.length === 0) {
+      res.status(400).json({ error: 'No ids or names provided' });
       return;
     }
 
     const deleted: string[] = [];
-    const errors: Array<{ filename: string; error: string }> = [];
+    const errors: Array<{ id: string; error: string }> = [];
 
-    for (const filename of filenames) {
-      const filepath = join(CONFIGS_DIR, `${filename}.yaml`);
-      if (existsSync(filepath)) {
-        try {
-          unlinkSync(filepath);
-          deleted.push(filename);
-        } catch (err) {
-          errors.push({ filename, error: String(err) });
-        }
+    // Collect agents to delete (by id or name)
+    const agentsToDelete: Array<{ id: string; name: string }> = [];
+
+    for (const id of ids) {
+      const agent = world?.registry.get(id);
+      if (agent) {
+        agentsToDelete.push({ id: agent.id, name: agent.name });
       } else {
-        errors.push({ filename, error: 'Not found' });
+        errors.push({ id, error: 'Not found in registry' });
+      }
+    }
+
+    for (const name of names) {
+      const agent = world?.registry.getByName(name);
+      if (agent && !agentsToDelete.find(a => a.id === agent.id)) {
+        agentsToDelete.push({ id: agent.id, name: agent.name });
+      }
+    }
+
+    // Delete each agent
+    for (const { id, name } of agentsToDelete) {
+      try {
+        world?.registry.unregister(id);
+        db.removeAgentFromAllRooms(id);
+        db.deleteAgent(id);
+        deleted.push(name);
+      } catch (err) {
+        errors.push({ id, error: String(err) });
       }
     }
 
     res.json({ status: 'deleted', deleted, errors });
   });
 
-  app.get('/api/personas/:filename', (req: Request, res: Response) => {
-    const filepath = join(CONFIGS_DIR, `${req.params.filename}.yaml`);
-    if (!existsSync(filepath)) {
+  // Get single persona by ID or name
+  app.get('/api/personas/:idOrName', (req: Request, res: Response) => {
+    const param = req.params.idOrName;
+    let agent = world?.registry.get(param);
+    if (!agent) {
+      agent = world?.registry.getByName(param);
+    }
+
+    if (!agent) {
       res.status(404).json({ error: 'Persona not found' });
       return;
     }
 
-    const content = readFileSync(filepath, 'utf-8');
-    const config = yaml.load(content) as Record<string, unknown>;
-    config._filename = req.params.filename;
-    res.json(config);
+    res.json({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      system_prompt: agent.system_prompt,
+      speaking_style: agent.speaking_style,
+      interests: agent.interests,
+      response_tendency: agent.response_tendency,
+      temperature: agent.temperature,
+      model: agent.model,
+      status: agent.status,
+      message_count: agent.message_count
+    });
   });
 
-  app.put('/api/personas/:filename', (req: Request, res: Response) => {
-    const filepath = join(CONFIGS_DIR, `${req.params.filename}.yaml`);
-    if (!existsSync(filepath)) {
+  // Update persona by ID or name
+  app.put('/api/personas/:idOrName', (req: Request, res: Response) => {
+    const param = req.params.idOrName;
+    let agent = world?.registry.get(param);
+    if (!agent) {
+      agent = world?.registry.getByName(param);
+    }
+
+    if (!agent) {
       res.status(404).json({ error: 'Persona not found' });
       return;
     }
 
     const data = req.body;
-    const config = {
-      name: data.name,
-      description: data.description || '',
-      system_prompt: data.system_prompt || '',
-      personality_traits: data.personality_traits || {},
-      speaking_style: data.speaking_style || '',
-      interests: data.interests || [],
-      response_tendency: parseFloat(data.response_tendency) || 0.5,
-      temperature: parseFloat(data.temperature) || 0.7,
-      model: data.model || 'haiku'
-    };
 
-    writeFileSync(filepath, yaml.dump(config));
-    res.json({ status: 'updated', filename: req.params.filename });
+    // Update agent properties
+    if (data.description !== undefined) agent.description = data.description;
+    if (data.system_prompt !== undefined) agent.system_prompt = data.system_prompt;
+    if (data.speaking_style !== undefined) agent.speaking_style = data.speaking_style;
+    if (data.interests !== undefined) agent.interests = data.interests;
+    if (data.response_tendency !== undefined) agent.response_tendency = parseFloat(data.response_tendency);
+    if (data.temperature !== undefined) agent.temperature = parseFloat(data.temperature);
+
+    // Persist to database
+    db.upsertAgent({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      system_prompt: agent.system_prompt,
+      personality_traits: agent.personality_traits,
+      speaking_style: agent.speaking_style,
+      interests: agent.interests,
+      response_tendency: agent.response_tendency,
+      temperature: agent.temperature,
+      model: agent.model
+    });
+
+    res.json({ status: 'updated', id: agent.id, name: agent.name });
   });
 
-  app.delete('/api/personas/:filename', (req: Request, res: Response) => {
-    const filepath = join(CONFIGS_DIR, `${req.params.filename}.yaml`);
-    if (!existsSync(filepath)) {
+  // Delete persona by ID or name
+  app.delete('/api/personas/:idOrName', (req: Request, res: Response) => {
+    const param = req.params.idOrName;
+    let agent = world?.registry.get(param);
+    if (!agent) {
+      agent = world?.registry.getByName(param);
+    }
+
+    if (!agent) {
       res.status(404).json({ error: 'Persona not found' });
       return;
     }
 
-    unlinkSync(filepath);
-    res.json({ status: 'deleted', filename: req.params.filename });
+    try {
+      const agentId = agent.id;
+      const agentName = agent.name;
+
+      world?.registry.unregister(agentId);
+      db.removeAgentFromAllRooms(agentId);
+      db.deleteAgent(agentId);
+
+      res.json({ status: 'deleted', id: agentId, name: agentName });
+    } catch (err) {
+      res.status(500).json({ error: `Failed to delete: ${err}` });
+    }
   });
 
   // === WebSocket ===
@@ -901,35 +1342,10 @@ Generate the JSON array of ${count} personas:`;
     });
   });
 
-  return { app, server, world };
-}
+  // Initialize actor system with WebSocket manager for broadcasting
+  actorIntegration.initializeActorSystem(manager).catch(err => {
+    console.error('Failed to initialize actor system:', err);
+  });
 
-/**
- * Helper function to load all persona configs from the configs directory.
- */
-function loadPersonaConfigs(): Array<Record<string, unknown>> {
-  const personas: Array<Record<string, unknown>> = [];
-
-  if (!existsSync(CONFIGS_DIR)) {
-    return personas;
-  }
-
-  const files = readdirSync(CONFIGS_DIR);
-  for (const file of files) {
-    if (!file.endsWith('.yaml') && !file.endsWith('.yml')) {
-      continue;
-    }
-
-    try {
-      const filepath = join(CONFIGS_DIR, file);
-      const content = readFileSync(filepath, 'utf-8');
-      const config = yaml.load(content) as Record<string, unknown>;
-      config._filename = file.replace(/\.ya?ml$/, '');
-      personas.push(config);
-    } catch (err) {
-      console.error(`Failed to load ${file}:`, err);
-    }
-  }
-
-  return personas;
+  return { app, server, world, manager };
 }
