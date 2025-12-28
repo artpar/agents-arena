@@ -85,12 +85,8 @@
 
             // Handle message_added events - render new messages in real-time
             if (data.type === 'message_added' && messagesDiv) {
-                console.log('[WS] Received message_added:', data);
                 const msg = data.message;
-                if (!msg) {
-                    console.log('[WS] No message in data');
-                    return true;
-                }
+                if (!msg) return true;
 
                 // Check if message already exists
                 if (document.querySelector('[data-message-id="' + msg.id + '"]')) {
@@ -216,39 +212,19 @@
             observer.observe(messagesDiv, { childList: true, subtree: true });
         });
 
-        // WebSocket interceptor - MUST run BEFORE HTMX loads
+        // WebSocket interceptor - intercept messages to handle JSON events
         (function() {
             const OriginalWebSocket = window.WebSocket;
             window.WebSocket = function(url, protocols) {
                 const ws = protocols ? new OriginalWebSocket(url, protocols) : new OriginalWebSocket(url);
 
-                const originalAddEventListener = ws.addEventListener.bind(ws);
-                ws.addEventListener = function(type, listener, options) {
-                    if (type === 'message') {
-                        const wrappedListener = function(event) {
-                            try {
-                                const data = JSON.parse(event.data);
-                                window.__handleJsonWebSocketMessage(data);
-                                return;
-                            } catch (e) {}
-                            listener.call(this, event);
-                        };
-                        return originalAddEventListener(type, wrappedListener, options);
-                    }
-                    return originalAddEventListener(type, listener, options);
-                };
-
-                Object.defineProperty(ws, 'onmessage', {
-                    get: function() { return this._onmessage; },
-                    set: function(handler) {
-                        this._onmessage = function(event) {
-                            try {
-                                const data = JSON.parse(event.data);
-                                window.__handleJsonWebSocketMessage(data);
-                                return;
-                            } catch (e) {}
-                            if (handler) handler.call(this, event);
-                        };
+                // Add our own message listener first to intercept JSON messages
+                ws.addEventListener('message', function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        window.__handleJsonWebSocketMessage(data);
+                    } catch (e) {
+                        // Not JSON, let other handlers process it
                     }
                 });
 
@@ -1623,6 +1599,11 @@
                 ws.onopen = function() {
                     console.log('[WS] Connected to', wsUrl);
                     reconnectAttempts = 0;
+
+                    // Join the current room to receive broadcasts
+                    const currentRoom = document.querySelector('main')?.dataset.currentRoom || 'general';
+                    ws.send(JSON.stringify({ type: 'join_room', roomId: currentRoom }));
+                    console.log('[WS] Joined room:', currentRoom);
                 };
 
                 ws.onmessage = function(event) {
@@ -1670,9 +1651,8 @@
         }
 
         // Trigger agent to respond
-        async function stepAgent(agentId) {
+        async function stepAgent(agentId, btn) {
             const currentRoom = document.querySelector('main')?.dataset.currentRoom || 'general';
-            const btn = event?.target;
             if (btn) {
                 btn.disabled = true;
                 btn.textContent = '...';
