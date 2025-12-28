@@ -235,8 +235,15 @@ function broadcastToRoom(
   const { roomId, event } = effect;
   const clientIds = state.roomClients.get(roomId);
 
+  logger.info('Broadcasting to room', {
+    roomId,
+    eventType: event.type,
+    clientCount: clientIds?.size ?? 0,
+    allRooms: Array.from(state.roomClients.keys())
+  });
+
   if (!clientIds || clientIds.size === 0) {
-    logger.debug('No clients in room', { roomId });
+    logger.warn('No clients in room', { roomId, allRooms: Array.from(state.roomClients.keys()) });
     return { sent: 0, failed: 0 };
   }
 

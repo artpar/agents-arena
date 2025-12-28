@@ -141,6 +141,13 @@ function createTables(db: Database.Database): void {
     }
   }
 
+  // Migration: Add topic column to rooms table
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN topic TEXT DEFAULT ''");
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   // Sessions table (simulation runs)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

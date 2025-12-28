@@ -60,7 +60,10 @@ import {
   getAgent as getDbAgent,
   upsertAgent,
   deleteAgent as deleteDbAgent,
-  AgentRow
+  AgentRow,
+  getRoom,
+  createRoom,
+  updateRoomTopic
 } from './core/database.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -165,6 +168,8 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     runtime.logger,
     (clientId) => {
       runtime.logger.info('Client connected', { clientId });
+      // Auto-join clients to the 'general' room so they receive broadcasts
+      moveClientToRoom(runtime.broadcast, clientId, 'general' as RoomId);
     },
     (clientId) => {
       runtime.logger.info('Client disconnected', { clientId });
@@ -182,12 +187,14 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     const status = getStatus(runtime);
     res.render('index.html', {
       status,
-      agents: getAgents(runtime)
+      agents: getAgents(runtime),
+      current_room: 'general'
     });
   });
 
   app.get('/messages', (req: Request, res: Response) => {
-    const messages = getMessages(runtime, 50);
+    const roomId = (req.query.room as string) || 'general';
+    const messages = getMessagesByRoom(runtime, roomId, 50);
     res.render('partials/messages.html', { messages });
   });
 
@@ -204,9 +211,15 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   });
 
   app.get('/topic-panel', (req: Request, res: Response) => {
+    const roomId = (req.query.room as string) || 'general';
+    // Get or create the room
+    let room = getRoom(roomId);
+    if (!room) {
+      room = createRoom(roomId, roomId, `${roomId} discussion room`, '');
+    }
     res.render('partials/topic.html', {
-      topic: '',
-      channel_name: 'general'
+      topic: room?.topic || '',
+      channel_name: roomId
     });
   });
 
@@ -238,7 +251,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   // ============================================================================
 
   app.post('/send', upload.array('files', 5), async (req: Request, res: Response) => {
-    const { sender = 'Human' } = req.body;
+    const { sender = 'Human', room = 'general' } = req.body;
     const messageContent = req.body.content?.trim();
     const files = req.files as Express.Multer.File[] | undefined;
 
@@ -261,7 +274,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       senderId: 'human' as AgentId,
       senderName: sender,
       content: messageContent || '[Attachment]',
-      roomId: 'general' as RoomId,
+      roomId: room as RoomId,
       attachments: attachments.length > 0 ? attachments : undefined
     });
 
@@ -491,11 +504,22 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
 
   // Topic API
   app.get('/api/topic', (req: Request, res: Response) => {
-    res.json({ topic: '', name: 'general' });
+    let room = getRoom('general');
+    if (!room) {
+      room = createRoom('general', 'general', 'General discussion room', '');
+    }
+    res.json({ topic: room?.topic || '', name: 'general' });
   });
 
   app.post('/api/topic', (req: Request, res: Response) => {
     const { topic = '' } = req.body;
+    // Ensure room exists
+    let room = getRoom('general');
+    if (!room) {
+      room = createRoom('general', 'general', 'General discussion room', topic);
+    } else {
+      updateRoomTopic('general', topic);
+    }
     res.json({ status: 'updated', topic });
   });
 
@@ -1111,6 +1135,40 @@ function getMessages(runtime: RuntimeContext, limit: number): unknown[] {
     LIMIT ?
   `);
   const rows = stmt.all(limit) as Array<{
+    id: string;
+    room_id: string;
+    sender_id: string;
+    sender_name: string;
+    content: string;
+    type: string;
+    timestamp: number;
+    mentions: string;
+    attachments: string;
+  }>;
+
+  return rows.reverse().map(row => ({
+    id: row.id,
+    room_id: row.room_id,
+    sender_id: row.sender_id,
+    sender_name: row.sender_name,
+    content: row.content,
+    type: row.type,
+    timestamp: row.timestamp,
+    mentions: JSON.parse(row.mentions || '[]'),
+    attachments: JSON.parse(row.attachments || '[]')
+  }));
+}
+
+function getMessagesByRoom(runtime: RuntimeContext, roomId: string, limit: number): unknown[] {
+  // Query database for messages in specific room
+  const stmt = runtime.database.db.prepare(`
+    SELECT id, room_id, sender_id, sender_name, content, type, timestamp, mentions, attachments
+    FROM messages
+    WHERE room_id = ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `);
+  const rows = stmt.all(roomId, limit) as Array<{
     id: string;
     room_id: string;
     sender_id: string;

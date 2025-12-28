@@ -83,8 +83,70 @@
                 return true;
             }
 
+            // Handle message_added events - render new messages in real-time
+            if (data.type === 'message_added' && messagesDiv) {
+                console.log('[WS] Received message_added:', data);
+                const msg = data.message;
+                if (!msg) {
+                    console.log('[WS] No message in data');
+                    return true;
+                }
+
+                // Check if message already exists
+                if (document.querySelector('[data-message-id="' + msg.id + '"]')) {
+                    return true;
+                }
+
+                const senderName = msg.sender_name || msg.senderName || 'Unknown';
+                const isHuman = senderName === 'Human';
+                const initial = senderName.charAt(0).toUpperCase();
+                const timestamp = msg.timestamp ? (typeof msg.timestamp === 'number' ? new Date(msg.timestamp).toISOString() : msg.timestamp).slice(11, 19) : '';
+                const content = msg.content || '';
+
+                let messageHtml = '';
+                if (msg.type === 'join') {
+                    messageHtml = '<div class="message system-message join-message"><div class="system-content"><span class="system-icon">+</span>' + content + '</div></div>';
+                } else if (msg.type === 'leave') {
+                    messageHtml = '<div class="message system-message leave-message"><div class="system-content"><span class="system-icon">-</span>' + content + '</div></div>';
+                } else if (msg.type === 'system') {
+                    messageHtml = '<div class="message system-message"><div class="system-content"><span class="system-icon">*</span>' + content + '</div></div>';
+                } else {
+                    const humanClass = isHuman ? 'human-message' : '';
+                    const senderClass = isHuman ? 'human' : '';
+                    messageHtml = '<div class="message chat-message ' + humanClass + '" data-message-id="' + msg.id + '">' +
+                        '<div class="message-avatar" data-sender="' + senderName + '">' + initial + '</div>' +
+                        '<div class="message-body">' +
+                            '<div class="message-header">' +
+                                '<span class="message-sender ' + senderClass + '" data-sender="' + senderName + '">' + senderName + '</span>' +
+                                '<span class="message-time">' + timestamp + '</span>' +
+                                '<button class="message-delete" onclick="deleteMessage(\'' + msg.id + '\')" title="Delete message">&times;</button>' +
+                            '</div>' +
+                            '<div class="message-content">' + content + '</div>' +
+                        '</div>' +
+                    '</div>';
+                }
+
+                messagesDiv.insertAdjacentHTML('beforeend', messageHtml);
+
+                // Apply markdown rendering to new message
+                if (typeof marked !== 'undefined') {
+                    const newMsg = messagesDiv.querySelector('[data-message-id="' + msg.id + '"] .message-content');
+                    if (newMsg && !newMsg.hasAttribute('data-md-rendered')) {
+                        const raw = newMsg.textContent || '';
+                        if (raw.match(/^#|^\*\*|\*\*$|^\- |^\d+\. |```/m)) {
+                            newMsg.innerHTML = marked.parse(raw);
+                            newMsg.classList.add('markdown-body');
+                            newMsg.setAttribute('data-md-rendered', 'true');
+                        }
+                    }
+                }
+
+                window.__scrollToBottomIfNeeded(messagesDiv);
+                return true;
+            }
+
             // Handle other known event types silently
-            if (data.type === 'message_added' || data.type === 'agent_status' ||
+            if (data.type === 'agent_status' ||
                 data.type === 'agent_joined' || data.type === 'agent_left' ||
                 data.type === 'phase_changed' || data.type === 'task_updated' ||
                 data.type === 'build_progress') {
@@ -229,6 +291,37 @@
 
         button.active {
             background: var(--success);
+        }
+
+        /* HTMX loading states */
+        .htmx-request {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .htmx-request::after {
+            content: " ...";
+            animation: loading-dots 1s steps(4, end) infinite;
+        }
+
+        @keyframes loading-dots {
+            0%, 20% { content: " ."; }
+            40% { content: " .."; }
+            60%, 100% { content: " ..."; }
+        }
+
+        button.htmx-request {
+            position: relative;
+        }
+
+        /* Success flash animation */
+        @keyframes success-flash {
+            0% { background: var(--success); }
+            100% { background: var(--bg-tertiary); }
+        }
+
+        .success-flash {
+            animation: success-flash 0.5s ease-out;
         }
 
         main {
@@ -1118,7 +1211,7 @@
         }
     </style>
 </head>
-<body hx-ext="ws" ws-connect="/ws">
+<body>
     <header>
         <h1>Agent Arena</h1>
         <a href="/personas" style="color: var(--text-secondary); text-decoration: none; margin-right: 1rem;">Manage Personas</a>
@@ -1127,12 +1220,12 @@
         </div>
     </header>
 
-    <main>
+    <main data-current-room="{{ current_room | default('general') }}">
         <div class="chat-container">
-            <div id="topic-container" hx-get="/topic-panel" hx-trigger="load">
+            <div id="topic-container" hx-get="/topic-panel?room={{ current_room | default('general') }}" hx-trigger="load">
                 <!-- Topic bar loaded via HTMX -->
             </div>
-            <div class="messages" id="messages" hx-get="/messages" hx-trigger="load">
+            <div class="messages" id="messages" hx-get="/messages?room={{ current_room | default('general') }}" hx-trigger="load">
                 <!-- Messages loaded via HTMX -->
             </div>
 
@@ -1140,6 +1233,7 @@
 
             <div class="input-area">
                 <form id="message-form" hx-post="/send" hx-swap="none" hx-encoding="multipart/form-data" hx-on::after-request="clearMessageForm()">
+                    <input type="hidden" name="room" id="current-room" value="{{ current_room | default('general') }}">
                     <div class="input-row">
                         <input type="text" name="sender" id="sender-name" placeholder="Name" value="Human">
                         <input type="text" name="content" id="message-content" placeholder="Type a message..." autocomplete="off" autofocus>
@@ -1256,6 +1350,12 @@
             messageContent.value = '';
             fileInput.value = '';
             filePreview.innerHTML = '';
+            // Flash success on send button
+            const sendBtn = document.querySelector('#message-form button[type="submit"]');
+            if (sendBtn) {
+                sendBtn.classList.add('success-flash');
+                setTimeout(() => sendBtn.classList.remove('success-flash'), 500);
+            }
         }
 
         // Drag and drop support
@@ -1337,6 +1437,53 @@
         document.body.addEventListener('htmx:afterSwap', renderMarkdown);
         document.body.addEventListener('htmx:wsAfterMessage', renderMarkdown);
 
+        // Native WebSocket connection for real-time updates
+        (function initWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/ws';
+            let ws = null;
+            let reconnectAttempts = 0;
+            const maxReconnectAttempts = 5;
+
+            function connect() {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    console.log('[WS] Connected to', wsUrl);
+                    reconnectAttempts = 0;
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('[WS] Received:', data.type);
+                        window.__handleJsonWebSocketMessage(data);
+                    } catch (e) {
+                        console.log('[WS] Non-JSON message:', event.data);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log('[WS] Disconnected');
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        setTimeout(connect, 2000 * reconnectAttempts);
+                    }
+                };
+
+                ws.onerror = function(err) {
+                    console.error('[WS] Error:', err);
+                };
+            }
+
+            // Connect when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', connect);
+            } else {
+                connect();
+            }
+        })();
+
         // Scroll to bottom on message swap (only if user was near bottom)
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             if (evt.target.id === 'messages') {
@@ -1408,6 +1555,7 @@
                 const response = await fetch('/api/rooms');
                 const data = await response.json();
                 const roomsList = document.getElementById('rooms-list');
+                const currentRoom = document.querySelector('main').dataset.currentRoom || 'general';
 
                 if (data.rooms.length === 0) {
                     roomsList.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.85rem;">No rooms yet</p>';
@@ -1416,7 +1564,7 @@
 
                 roomsList.innerHTML = '<ul class="room-list">' +
                     data.rooms.map(room => `
-                        <li class="${room.name === data.current ? 'active' : ''}" onclick="goToRoomDirect('${room.name}')">
+                        <li class="${room.name === currentRoom ? 'active' : ''}" onclick="goToRoomDirect('${room.name}')">
                             <span class="room-name">#${room.name}</span>
                             <span class="room-count">${room.message_count} msgs</span>
                         </li>
