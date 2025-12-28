@@ -137,7 +137,30 @@ export interface ResponseToolUseBlock {
   readonly input: unknown;
 }
 
-export type ResponseContentBlock = ResponseTextBlock | ResponseToolUseBlock;
+/**
+ * Server tool use block in response (for server-side tools like web_search).
+ */
+export interface ResponseServerToolUseBlock {
+  readonly type: 'server_tool_use';
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+/**
+ * Web search tool result block.
+ */
+export interface ResponseWebSearchToolResultBlock {
+  readonly type: 'web_search_tool_result';
+  readonly tool_use_id: string;
+  readonly content: unknown;
+}
+
+export type ResponseContentBlock =
+  | ResponseTextBlock
+  | ResponseToolUseBlock
+  | ResponseServerToolUseBlock
+  | ResponseWebSearchToolResultBlock;
 
 /**
  * Usage information from API.

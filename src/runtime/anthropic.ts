@@ -147,6 +147,8 @@ async function callAnthropicApi(
     replyTag,
     model: request.model,
     messageCount: request.messages.length,
+    toolCount: request.tools?.length || 0,
+    toolNames: request.tools?.map(t => t.name) || [],
     messages: request.messages.map(m => ({ role: m.role, contentLen: typeof m.content === 'string' ? m.content.length : 'array' }))
   });
 
@@ -288,8 +290,30 @@ function toResponseBlock(block: Anthropic.ContentBlock): ResponseContentBlock {
       name: block.name,
       input: block.input
     });
+  } else if ((block as { type: string }).type === 'server_tool_use') {
+    // Server-side tool use (e.g., web_search)
+    const serverBlock = block as { type: 'server_tool_use'; id: string; name: string; input: unknown };
+    return Object.freeze({
+      type: 'server_tool_use',
+      id: serverBlock.id,
+      name: serverBlock.name,
+      input: serverBlock.input
+    });
+  } else if ((block as { type: string }).type === 'web_search_tool_result') {
+    // Web search tool result
+    const resultBlock = block as { type: 'web_search_tool_result'; tool_use_id: string; content: unknown };
+    return Object.freeze({
+      type: 'web_search_tool_result',
+      tool_use_id: resultBlock.tool_use_id,
+      content: resultBlock.content
+    });
   }
-  throw new Error(`Unknown content block type: ${(block as { type: string }).type}`);
+  // For any other block types, treat as text with the raw content
+  console.warn(`Unhandled content block type: ${(block as { type: string }).type}`);
+  return Object.freeze({
+    type: 'text',
+    text: `[Unhandled block type: ${(block as { type: string }).type}]`
+  });
 }
 
 // ============================================================================

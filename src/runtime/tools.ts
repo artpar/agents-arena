@@ -35,6 +35,7 @@ import {
   Logger
 } from './types.js';
 import { Effect } from '../effects/index.js';
+import { toolRegistry, ToolContext as RegistryToolContext } from '../tools/index.js';
 
 // ============================================================================
 // TOOLS EXECUTOR
@@ -353,6 +354,7 @@ interface ToolExecutionResult {
 
 /**
  * Dispatch to the appropriate tool handler.
+ * First checks the tool registry, then falls back to built-in handlers.
  */
 async function dispatchTool(
   state: ToolsState,
@@ -363,6 +365,23 @@ async function dispatchTool(
 ): Promise<ToolExecutionResult> {
   const inp = input as Record<string, unknown>;
 
+  // Check if tool exists in the registry (memory, bash, text_editor)
+  if (toolRegistry.has(toolName)) {
+    const registryContext: RegistryToolContext = {
+      roomId: context.projectId || 'general',
+      agentId: context.agentId,
+      agentName: context.agentName,
+      workDir: context.workspacePath,
+      sharedDir: context.sharedWorkspacePath
+    };
+    const result = await toolRegistry.execute(toolName, inp, registryContext);
+    return {
+      content: result.content,
+      artifacts: undefined
+    };
+  }
+
+  // Fall back to built-in handlers
   switch (toolName) {
     case 'bash':
       return handleBashTool(state, inp, context, logger);
