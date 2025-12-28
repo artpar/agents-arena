@@ -142,11 +142,12 @@ async function callAnthropicApi(
 ): Promise<ApiCallResult> {
   const { agentId, request, replyTag } = effect;
 
-  logger.debug('Calling Anthropic API', {
+  logger.info('Calling Anthropic API', {
     agentId,
     replyTag,
     model: request.model,
-    messageCount: request.messages.length
+    messageCount: request.messages.length,
+    messages: request.messages.map(m => ({ role: m.role, contentLen: typeof m.content === 'string' ? m.content.length : 'array' }))
   });
 
   // Create abort controller for cancellation

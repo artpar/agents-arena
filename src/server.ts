@@ -462,18 +462,18 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     let triggerMessage: ChatMessage;
 
     if (rows.length === 0) {
-      // No messages - create a system prompt to start conversation
-      const systemPrompt = createChatMessage({
-        id: `system_${Date.now()}`,
+      // No messages - create a prompt to start conversation (type: 'chat' so it's not skipped by toConversationTurns)
+      const startPrompt = createChatMessage({
+        id: `start_${Date.now()}`,
         roomId,
-        senderId: 'system',
+        senderId: 'human',
         senderName: 'System',
         content: `You've just joined the #${roomId} room. The topic is: "${roomTopic}". Start or contribute to the conversation based on your personality and the room topic.`,
-        type: 'system',
+        type: 'chat',
         timestamp: Date.now()
       });
-      contextMessages = [systemPrompt];
-      triggerMessage = systemPrompt;
+      contextMessages = [startPrompt];
+      triggerMessage = startPrompt;
     } else {
       // Convert to ChatMessage format (oldest first for context)
       contextMessages = rows.reverse().map(row => createChatMessage({

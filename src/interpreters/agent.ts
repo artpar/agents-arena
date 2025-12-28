@@ -331,7 +331,29 @@ function handleRespondToMessage(
 
   // Build conversation history for API
   const turns = toConversationTurns(contextMessages, agentId);
-  const apiMessages = turnsToApiMessages(turns);
+  let apiMessages = turnsToApiMessages(turns);
+
+  // Anthropic API requires conversation to end with 'user' message
+  // If the last message is from this agent (assistant), add a continuation prompt
+  if (apiMessages.length > 0 && apiMessages[apiMessages.length - 1].role === 'assistant') {
+    apiMessages = Object.freeze([
+      ...apiMessages,
+      Object.freeze({
+        role: 'user' as const,
+        content: '[System: Please continue the conversation naturally based on the context above. You may share your thoughts, ask questions, or respond to the ongoing discussion.]'
+      })
+    ]);
+  }
+
+  // If no messages at all, create a starter prompt
+  if (apiMessages.length === 0) {
+    apiMessages = Object.freeze([
+      Object.freeze({
+        role: 'user' as const,
+        content: '[System: Start or join the conversation. Share your thoughts on the topic at hand.]'
+      })
+    ]);
+  }
 
   // Create API request
   const replyTag = `api_${Date.now()}_${Math.random().toString(36).slice(2)}`;
