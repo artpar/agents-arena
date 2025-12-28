@@ -1,4 +1,4 @@
-<div id="agents-content" hx-get="/agents-list" hx-trigger="every 5s" hx-swap="outerHTML">
+<div id="agents-list">
     <h2>Agents ({{ agents|length }})</h2>
     <ul class="agent-list">
         {% for agent in agents %}
@@ -14,7 +14,7 @@
                 <button class="remove-btn"
                         hx-delete="/agents/{{ agent.id }}"
                         hx-confirm="Remove {{ agent.name }}?"
-                        hx-target="#agents-content"
+                        hx-target="#agents-list"
                         hx-swap="outerHTML">×</button>
             </span>
         </li>

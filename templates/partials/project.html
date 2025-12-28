@@ -41,7 +41,14 @@
         {% if project.phase == 'planning' %}
         <button class="action-btn primary" onclick="advancePhase()">Start Building</button>
         {% elif project.phase == 'building' %}
+        {% if status and status.running %}
         <div class="building-status">Agents are working...</div>
+        {% else %}
+        <div class="paused-status" style="display: flex; gap: 0.5rem; align-items: center;">
+            <span style="color: var(--text-secondary); font-size: 0.85rem;">Paused</span>
+            <button class="action-btn" onclick="advancePhase()" title="Skip building and move to review">Skip to Review →</button>
+        </div>
+        {% endif %}
         {% elif project.phase == 'reviewing' %}
         <button class="action-btn primary" onclick="advancePhase()">Complete Project</button>
         {% elif project.phase == 'done' %}

@@ -145,10 +145,43 @@
                 return true;
             }
 
+            // Handle status updates
+            if (data.type === 'status_update') {
+                const runningEl = document.getElementById('status-running');
+                const modeEl = document.getElementById('status-mode');
+                const roundEl = document.getElementById('status-round');
+                if (runningEl) runningEl.textContent = data.running ? 'true' : 'false';
+                if (modeEl) modeEl.textContent = data.mode || 'hybrid';
+                if (roundEl) roundEl.textContent = data.current_round || '0';
+                return true;
+            }
+
+            // Handle phase_changed - refresh project panel
+            if (data.type === 'phase_changed') {
+                const projectPanel = document.getElementById('project-panel');
+                if (projectPanel && window.htmx) {
+                    htmx.trigger(projectPanel, 'load');
+                }
+                return true;
+            }
+
+            // Handle agent_joined/left - refresh agents list
+            if (data.type === 'agent_joined' || data.type === 'agent_left') {
+                // Fetch and update agents list
+                fetch('/agents-list')
+                    .then(r => r.text())
+                    .then(html => {
+                        const agentsList = document.getElementById('agents-list');
+                        if (agentsList) {
+                            agentsList.outerHTML = html;
+                        }
+                    });
+                return true;
+            }
+
             // Handle other known event types silently
             if (data.type === 'agent_status' ||
-                data.type === 'agent_joined' || data.type === 'agent_left' ||
-                data.type === 'phase_changed' || data.type === 'task_updated' ||
+                data.type === 'task_updated' ||
                 data.type === 'build_progress') {
                 return true;
             }
@@ -1249,16 +1282,16 @@
         </div>
 
         <div class="sidebar">
-            <div class="sidebar-section" id="status-panel" hx-get="/status-panel" hx-trigger="every 5s">
+            <div class="sidebar-section" id="status-panel">
                 <h2>Status</h2>
-                <div class="status-info">
-                    <p><span class="label">Running:</span> <span>{{ status.running }}</span></p>
-                    <p><span class="label">Mode:</span> <span>{{ status.mode }}</span></p>
-                    <p><span class="label">Round:</span> <span>{{ status.current_round }}</span></p>
+                <div class="status-info" id="status-content">
+                    <p><span class="label">Running:</span> <span id="status-running">{{ status.running }}</span></p>
+                    <p><span class="label">Mode:</span> <span id="status-mode">{{ status.mode }}</span></p>
+                    <p><span class="label">Round:</span> <span id="status-round">{{ status.current_round }}</span></p>
                 </div>
             </div>
 
-            <div class="sidebar-section" id="project-panel" hx-get="/project-panel" hx-trigger="load, every 5s">
+            <div class="sidebar-section" id="project-panel" hx-get="/project-panel" hx-trigger="load" hx-swap="innerHTML">
                 <h2>Project</h2>
                 <div id="project-content">
                     <p style="color: var(--text-secondary); font-size: 0.85rem;">Loading...</p>

@@ -242,7 +242,8 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
 
     res.render('partials/project.html', {
       project,
-      agents: getAgents(runtime)
+      agents: getAgents(runtime),
+      status: getStatus(runtime)
     });
   });
 
