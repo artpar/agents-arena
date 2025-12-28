@@ -39,8 +39,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { createServer } from './server.js';
+import { initializeTools } from './tools/index.js';
 
 async function main(): Promise<void> {
+  // Initialize tool registry
+  initializeTools();
   // Parse command line arguments
   const args = process.argv.slice(2);
   let port = 8888;

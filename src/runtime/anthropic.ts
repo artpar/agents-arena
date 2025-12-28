@@ -164,11 +164,21 @@ async function callAnthropicApi(
           role: msg.role,
           content: msg.content as string | Anthropic.ContentBlock[]
         })),
-        tools: request.tools?.map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.input_schema as Anthropic.Tool.InputSchema
-        })),
+        tools: request.tools?.map(tool => {
+          // Built-in schema-less tools (bash, text_editor, web_search, etc.)
+          if (tool.type) {
+            return {
+              type: tool.type,
+              name: tool.name
+            } as Anthropic.Tool;
+          }
+          // Custom tools with full schema
+          return {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.input_schema as Anthropic.Tool.InputSchema
+          } as Anthropic.Tool;
+        }),
         temperature: request.temperature
       },
       { signal: abortController.signal }

@@ -46,6 +46,9 @@ import {
   dbUpdateAgentStats
 } from '../effects/database.js';
 import {
+  getAllToolDefinitions
+} from '../tools/index.js';
+import {
   AgentState,
   AgentConfig,
   AgentStatus,
@@ -355,12 +358,14 @@ function handleRespondToMessage(
     ]);
   }
 
-  // Create API request
+  // Create API request with tools
   const replyTag = `api_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const toolDefinitions = getAllToolDefinitions();
   const request = createAnthropicRequest({
     model: resolveModel(state.config.model),
     messages: apiMessages,
     system: state.config.systemPrompt,
+    tools: toolDefinitions,
     temperature: state.config.temperature,
     maxTokens: 4096
   });
@@ -605,10 +610,12 @@ function handleToolResult(
   ]);
 
   const replyTag = `api_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const toolDefinitions = getAllToolDefinitions();
   const request = createAnthropicRequest({
     model: resolveModel(state.config.model),
     messages: newMessages,
     system: state.config.systemPrompt,
+    tools: toolDefinitions,
     temperature: state.config.temperature,
     maxTokens: 4096
   });

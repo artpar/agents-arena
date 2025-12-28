@@ -68,11 +68,14 @@ export interface ApiMessage {
 
 /**
  * Tool definition for the API.
+ * Built-in tools use `type` (e.g., "bash_20250124").
+ * Custom tools use `description` and `input_schema`.
  */
 export interface ApiToolDefinition {
   readonly name: string;
-  readonly description: string;
-  readonly input_schema: {
+  readonly type?: string;  // For built-in schema-less tools
+  readonly description?: string;
+  readonly input_schema?: {
     readonly type: 'object';
     readonly properties: Readonly<Record<string, unknown>>;
     readonly required?: readonly string[];
