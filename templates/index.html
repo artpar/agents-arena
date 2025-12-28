@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Arena</title>
+    <link rel="stylesheet" href="https://unpkg.com/github-markdown-css@5.5.1/github-markdown-dark.css">
     <script>
         // WebSocket JSON message handler - defined early so it's available
         window.__typingAgents = new Set();
@@ -154,6 +155,7 @@
     </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+    <script src="https://unpkg.com/marked@12.0.0/marked.min.js"></script>
     <style>
         :root {
             --bg-primary: #1a1a2e;
@@ -351,6 +353,17 @@
             line-height: 1.7;
             font-size: 0.95rem;
             word-wrap: break-word;
+        }
+
+        .message-content.markdown-body {
+            background: transparent;
+            font-size: 0.95rem;
+        }
+        .message-content.markdown-body h1:first-child,
+        .message-content.markdown-body h2:first-child,
+        .message-content.markdown-body h3:first-child,
+        .message-content.markdown-body p:first-child {
+            margin-top: 0;
         }
 
         /* System messages */
@@ -1296,6 +1309,23 @@
         document.addEventListener('DOMContentLoaded', applyAvatarColors);
         document.body.addEventListener('htmx:afterSwap', applyAvatarColors);
         document.body.addEventListener('htmx:wsAfterMessage', applyAvatarColors);
+
+        // Render markdown in message content
+        function renderMarkdown() {
+            if (typeof marked === 'undefined') return;
+            document.querySelectorAll('.message-content:not([data-md-rendered])').forEach(el => {
+                const raw = el.textContent || '';
+                // Only render if it looks like markdown (has headers, bold, lists, etc.)
+                if (raw.match(/^#|^\*\*|\*\*$|^\- |^\d+\. |```/m)) {
+                    el.innerHTML = marked.parse(raw);
+                    el.classList.add('markdown-body');
+                    el.setAttribute('data-md-rendered', 'true');
+                }
+            });
+        }
+        document.addEventListener('DOMContentLoaded', renderMarkdown);
+        document.body.addEventListener('htmx:afterSwap', renderMarkdown);
+        document.body.addEventListener('htmx:wsAfterMessage', renderMarkdown);
 
         // Scroll to bottom on message swap
         document.body.addEventListener('htmx:afterSwap', function(evt) {
