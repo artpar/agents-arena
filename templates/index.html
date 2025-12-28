@@ -9,6 +9,16 @@
         // WebSocket JSON message handler - defined early so it's available
         window.__typingAgents = new Set();
 
+        // Helper: only scroll to bottom if user is already near bottom
+        window.__scrollToBottomIfNeeded = function(el) {
+            if (!el) return;
+            const threshold = 150; // pixels from bottom
+            const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+            if (isNearBottom) {
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+
         window.__handleJsonWebSocketMessage = function(data) {
             const messagesDiv = document.getElementById('messages');
 
@@ -42,7 +52,7 @@
                 const inputPreview = inputStr.slice(0, 500) + (inputStr.length > 500 ? '...' : '');
                 const toolHtml = '<div class="message tool-message" style="background: #1c2128; border-left: 3px solid #f0883e; padding: 0.5rem 1rem; margin: 0.25rem 0; font-size: 0.85rem;"><span style="color: #f0883e;">Tool</span> <strong style="color: #7ee787;">' + (data.agent_name || '') + '</strong><span style="color: #8b949e;"> using </span><code style="background: #30363d; padding: 0.1rem 0.3rem; border-radius: 3px; color: #79c0ff;">' + (data.tool_name || '') + '</code></div>';
                 messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                window.__scrollToBottomIfNeeded(messagesDiv);
                 return true;
             }
 
@@ -52,7 +62,7 @@
                 const statusIcon = data.is_error ? 'Error' : 'Done';
                 const toolHtml = '<div class="message tool-result-message" style="background: #1c2128; border-left: 3px solid ' + statusColor + '; padding: 0.5rem 1rem; margin: 0.25rem 0 0.5rem 1rem; font-size: 0.8rem;"><span style="color: ' + statusColor + ';">' + statusIcon + '</span> <code style="color: #8b949e;">' + (data.tool_name || '') + '</code></div>';
                 messagesDiv.insertAdjacentHTML('beforeend', toolHtml);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                window.__scrollToBottomIfNeeded(messagesDiv);
                 return true;
             }
 
@@ -62,7 +72,7 @@
                 const color = levelColors[data.level] || levelColors.info;
                 const notifHtml = '<div class="message system-notification" style="background: #21262d; border-left: 3px solid ' + color + '; padding: 0.5rem 1rem; margin: 0.5rem 0; font-size: 0.85rem; color: ' + color + ';">' + (data.message || '') + '</div>';
                 messagesDiv.insertAdjacentHTML('beforeend', notifHtml);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                window.__scrollToBottomIfNeeded(messagesDiv);
                 return true;
             }
 
@@ -1327,11 +1337,11 @@
         document.body.addEventListener('htmx:afterSwap', renderMarkdown);
         document.body.addEventListener('htmx:wsAfterMessage', renderMarkdown);
 
-        // Scroll to bottom on message swap
+        // Scroll to bottom on message swap (only if user was near bottom)
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             if (evt.target.id === 'messages') {
                 const messagesDiv = document.getElementById('messages');
-                if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                window.__scrollToBottomIfNeeded(messagesDiv);
             }
         });
 
