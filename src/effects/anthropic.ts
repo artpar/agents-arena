@@ -6,7 +6,7 @@
  * The boundary executor will actually make the HTTP calls.
  */
 
-import { AgentId } from '../values/index.js';
+import { AgentId, RoomId } from '../values/index.js';
 
 // ============================================================================
 // API REQUEST TYPES (Immutable values for API calls)
@@ -172,18 +172,21 @@ export interface CallAnthropic {
   readonly agentId: AgentId;         // Which agent is making this call
   readonly request: AnthropicRequest;
   readonly replyTag: string;         // Tag to correlate response
+  readonly roomId: RoomId;           // Room to broadcast response to
 }
 
 export function callAnthropic(
   agentId: AgentId,
   request: AnthropicRequest,
-  replyTag: string
+  replyTag: string,
+  roomId: RoomId
 ): CallAnthropic {
   return Object.freeze({
     type: 'CALL_ANTHROPIC',
     agentId,
     request,
-    replyTag
+    replyTag,
+    roomId
   });
 }
 

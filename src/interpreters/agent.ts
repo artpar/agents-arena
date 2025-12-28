@@ -379,7 +379,7 @@ function handleRespondToMessage(
   const effects: Effect[] = [
     broadcastToRoom(roomId, agentTyping(agentId, agentName, true)),
     broadcastToRoom(roomId, agentStatusEvent(agentId, agentName, 'thinking')),
-    callAnthropic(agentId, request, replyTag)
+    callAnthropic(agentId, request, replyTag, roomId)
   ];
 
   return [newState, Object.freeze(effects)];
@@ -627,7 +627,7 @@ function handleToolResult(
   // Continue the API conversation with tool result logging
   const effects: Effect[] = [
     ...toolResultLogEffects,
-    callAnthropic(state.config.id, request, replyTag)
+    callAnthropic(state.config.id, request, replyTag, roomId)
   ];
 
   return [newState, Object.freeze(effects)];
