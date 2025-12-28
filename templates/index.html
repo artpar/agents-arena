@@ -174,6 +174,9 @@
                         const agentsList = document.getElementById('agents-list');
                         if (agentsList) {
                             agentsList.outerHTML = html;
+                            // Process new HTMX elements
+                            const newAgentsList = document.getElementById('agents-list');
+                            if (newAgentsList) htmx.process(newAgentsList);
                         }
                     });
                 return true;
@@ -691,39 +694,41 @@
             background: var(--bg-secondary);
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
         }
 
         .sidebar-section {
-            padding: 1rem;
+            padding: 0.75rem;
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
 
         .sidebar-section.agents-section {
-            flex: 1;
-            overflow-y: auto;
-            min-height: 0;
+            flex-shrink: 1;
+            min-height: 100px;
         }
 
         .sidebar-section h2 {
-            font-size: 0.9rem;
+            font-size: 0.75rem;
             color: var(--text-secondary);
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.5rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
         .agent-list {
             list-style: none;
+            max-height: 200px;
+            overflow-y: auto;
         }
 
         .agent-list li {
-            padding: 0.5rem;
+            padding: 0.35rem 0.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-radius: 4px;
+            font-size: 0.85rem;
         }
 
         .agent-list li:hover {
@@ -901,15 +906,18 @@
 
         .room-list {
             list-style: none;
+            max-height: 150px;
+            overflow-y: auto;
         }
 
         .room-list li {
-            padding: 0.4rem 0.5rem;
+            padding: 0.3rem 0.5rem;
             border-radius: 4px;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            font-size: 0.85rem;
         }
 
         .room-list li:hover {
@@ -957,7 +965,7 @@
         .project-name {
             font-weight: 600;
             color: var(--text-primary);
-            font-size: 0.95rem;
+            font-size: 0.85rem;
         }
 
         .phase-badge {
@@ -1528,6 +1536,34 @@
         function updateMode(mode) {
             // Mode will be used on next start
             console.log('Mode set to:', mode);
+        }
+
+        // Trigger agent to respond
+        async function stepAgent(agentId) {
+            const currentRoom = document.querySelector('main')?.dataset.currentRoom || 'general';
+            const btn = event?.target;
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '...';
+            }
+            try {
+                const response = await fetch(`/agents/${agentId}/step`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roomId: currentRoom })
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert(error.error || 'Step failed');
+                }
+            } catch (e) {
+                alert('Request failed: ' + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '▶';
+                }
+            }
         }
 
         // Topic editing

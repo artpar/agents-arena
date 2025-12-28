@@ -431,6 +431,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   app.post('/agents/:agentId/step', async (req: Request, res: Response) => {
     const agentId = req.params.agentId as AgentId;
     const roomId = (req.body.roomId || 'general') as RoomId;
+    console.log('[INFO] Step requested', { agentId, roomId });
 
     // Get recent messages from database for context
     const stmt = runtime.database.db.prepare(`
