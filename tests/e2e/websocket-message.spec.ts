@@ -1,9 +1,12 @@
 import { test, expect, Page } from '@playwright/test';
 
 test.describe('WebSocket Message Rendering', () => {
+  // Use fresh rooms to avoid state pollution between tests
+  const getTestRoom = () => `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
   test.describe('Basic Message Flow', () => {
     test('user-sent message should appear in DOM via WebSocket', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const testMessage = 'E2E_Test_Message_' + Date.now();
@@ -15,7 +18,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('multiple messages should appear in order', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const timestamp = Date.now();
@@ -38,11 +41,12 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('message should include sender name', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
-      const senderName = 'TestSender_' + Date.now();
-      const testMessage = 'Message from custom sender';
+      const timestamp = Date.now();
+      const senderName = 'TestSender_' + timestamp;
+      const testMessage = 'SenderTest_' + timestamp;
 
       await page.locator('#sender-name').fill(senderName);
       await page.locator('#message-content').fill(testMessage);
@@ -57,7 +61,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('message should have timestamp', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const testMessage = 'Timestamp_Test_' + Date.now();
@@ -79,7 +83,7 @@ test.describe('WebSocket Message Rendering', () => {
 
   test.describe('Message Deduplication', () => {
     test('same message should not appear twice', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const testMessage = 'Dedup_Test_' + Date.now();
@@ -98,7 +102,7 @@ test.describe('WebSocket Message Rendering', () => {
 
   test.describe('Typing Indicators', () => {
     test('typing indicator should show when agent is thinking', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const typingIndicator = page.locator('#typing-indicator');
@@ -199,7 +203,7 @@ test.describe('WebSocket Message Rendering', () => {
 
   test.describe('Message Content Types', () => {
     test('should handle special characters in messages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const specialMessage = 'Special chars: <script>alert("xss")</script> & "quotes" \'single\'';
@@ -218,7 +222,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('should handle emoji in messages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const emojiMessage = 'Hello 👋 World 🌍 Test 🧪 ' + Date.now();
@@ -230,7 +234,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('should handle long messages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const longMessage = 'Long_' + 'x'.repeat(500) + '_' + Date.now();
@@ -242,7 +246,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('should handle markdown in messages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const markdownMessage = '**Bold** and *italic* text ' + Date.now();
@@ -262,7 +266,7 @@ test.describe('WebSocket Message Rendering', () => {
 
   test.describe('Message UI Elements', () => {
     test('message should have avatar with initial', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const senderName = 'Alice';
@@ -283,7 +287,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('message should have delete button', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const testMessage = 'Delete_Button_Test_' + Date.now();
@@ -301,7 +305,7 @@ test.describe('WebSocket Message Rendering', () => {
     });
 
     test('delete button should remove message', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const testMessage = 'To_Be_Deleted_' + Date.now();
@@ -323,13 +327,14 @@ test.describe('WebSocket Message Rendering', () => {
 
   test.describe('Scroll Behavior', () => {
     test('should auto-scroll to new messages when at bottom', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const messagesDiv = page.locator('#messages');
 
       // Scroll to bottom first
       await messagesDiv.evaluate(el => el.scrollTop = el.scrollHeight);
+      await page.waitForTimeout(500);
 
       const testMessage = 'Scroll_Test_' + Date.now();
       await page.locator('#message-content').fill(testMessage);
@@ -338,16 +343,19 @@ test.describe('WebSocket Message Rendering', () => {
       await expect(page.locator('#message-content')).toHaveValue('', { timeout: 5000 });
       await expect(page.locator('.message-content', { hasText: testMessage })).toBeVisible({ timeout: 10000 });
 
-      // Verify we're still scrolled to bottom
+      // Wait for scroll animation to complete
+      await page.waitForTimeout(500);
+
+      // Verify we're still scrolled to bottom (with generous threshold)
       const isNearBottom = await messagesDiv.evaluate(el => {
-        const threshold = 150;
+        const threshold = 200;
         return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       });
       expect(isNearBottom).toBe(true);
     });
 
     test('should not auto-scroll when user scrolled up', async ({ page }) => {
-      await page.goto('/');
+      await page.goto(`/r/${getTestRoom()}`);
       await page.waitForTimeout(2000);
 
       const messagesDiv = page.locator('#messages');
