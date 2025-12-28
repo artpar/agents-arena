@@ -1,107 +1,58 @@
-<div id="project-content">
-    {% if project %}
-    <div class="project-header">
-        <span class="project-name">{{ project.name }}</span>
-        <span class="phase-badge phase-{{ project.phase }}">{{ project.phase | upper }}</span>
+{% if project %}
+<div class="project-header">
+    <span class="project-name">{{ project.name }}</span>
+    <span class="phase-badge phase-{{ project.phase }}">{{ project.phase | upper }}</span>
+</div>
+
+<div class="project-goal">{{ project.goal }}</div>
+
+<div class="project-tasks">
+    <div class="tasks-header">
+        <span>Tasks ({{ project.tasks | length }})</span>
+        <button class="add-task-btn" onclick="showAddTaskForm()">+</button>
     </div>
 
-    <div class="project-goal">{{ project.goal }}</div>
-
-    <div class="project-tasks">
-        <div class="tasks-header">
-            <span>Tasks ({{ project.tasks | length }})</span>
-            <button class="add-task-btn" onclick="showAddTaskForm()">+</button>
-        </div>
-
-        {% if project.tasks | length > 0 %}
-        <ul class="task-list">
-            {% for task in project.tasks %}
-            <li class="task-item task-{{ task.status }}">
-                <div class="task-status-dot"></div>
-                <div class="task-info">
-                    <div class="task-title">{{ task.title }}</div>
-                    {% if task.assigneeName %}
-                    <div class="task-assignee">{{ task.assigneeName }}</div>
-                    {% else %}
-                    <div class="task-unassigned">Unassigned</div>
-                    {% endif %}
-                </div>
-                {% if task.status == 'unassigned' %}
-                <button class="assign-btn" onclick="showAssignModal('{{ task.id }}', '{{ task.title }}')">Assign</button>
+    {% if project.tasks | length > 0 %}
+    <ul class="task-list">
+        {% for task in project.tasks %}
+        <li class="task-item task-{{ task.status }}">
+            <div class="task-status-dot"></div>
+            <div class="task-info">
+                <div class="task-title">{{ task.title }}</div>
+                {% if task.assigneeName %}
+                <div class="task-assignee">{{ task.assigneeName }}</div>
+                {% else %}
+                <div class="task-unassigned">Unassigned</div>
                 {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <p class="no-tasks">No tasks yet. Add one to get started.</p>
-        {% endif %}
-    </div>
-
-    <div class="project-actions">
-        {% if project.phase == 'planning' %}
-        <button class="action-btn primary" onclick="advancePhase()">Start Building</button>
-        {% elif project.phase == 'building' %}
-        {% if status and status.running %}
-        <div class="building-status">Agents are working...</div>
-        {% else %}
-        <div class="paused-status" style="display: flex; gap: 0.5rem; align-items: center;">
-            <span style="color: var(--text-secondary); font-size: 0.85rem;">Paused</span>
-            <button class="action-btn" onclick="advancePhase()" title="Skip building and move to review">Skip to Review →</button>
-        </div>
-        {% endif %}
-        {% elif project.phase == 'reviewing' %}
-        <button class="action-btn primary" onclick="advancePhase()">Complete Project</button>
-        {% elif project.phase == 'done' %}
-        <div class="done-status">Project Complete!</div>
-        {% endif %}
-    </div>
-
+            </div>
+            {% if task.status == 'unassigned' %}
+            <button class="assign-btn" onclick="showAssignModal('{{ task.id }}', '{{ task.title }}')">Assign</button>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
     {% else %}
-
-    <div class="no-project">
-        <p>No active project</p>
-        <button class="action-btn" onclick="showCreateProjectForm()">Create Project</button>
-    </div>
-
+    <p class="no-tasks">No tasks yet</p>
     {% endif %}
 </div>
 
-<!-- Create Project Form (hidden by default) -->
-<div id="create-project-form" class="project-form" style="display: none;">
-    <h4>New Project</h4>
-    <input type="text" id="project-name-input" placeholder="Project name">
-    <textarea id="project-goal-input" placeholder="What's the goal?" rows="2"></textarea>
-    <div class="form-buttons">
-        <button class="action-btn" onclick="createProject()">Create</button>
-        <button class="cancel-btn" onclick="hideCreateProjectForm()">Cancel</button>
-    </div>
+<div class="project-actions">
+    {% if project.phase == 'planning' %}
+    <button class="action-btn primary" onclick="advancePhase()">Start Building</button>
+    {% elif project.phase == 'building' %}
+    {% if status and status.running %}
+    <span class="building-status">Working...</span>
+    {% else %}
+    <button class="action-btn" onclick="advancePhase()">Skip to Review →</button>
+    {% endif %}
+    {% elif project.phase == 'reviewing' %}
+    <button class="action-btn primary" onclick="advancePhase()">Complete</button>
+    {% elif project.phase == 'done' %}
+    <span class="done-status">Done!</span>
+    {% endif %}
 </div>
-
-<!-- Add Task Form (hidden by default) -->
-<div id="add-task-form" class="project-form" style="display: none;">
-    <h4>Add Task</h4>
-    <input type="text" id="task-title-input" placeholder="Task title">
-    <textarea id="task-desc-input" placeholder="Description" rows="2"></textarea>
-    <div class="form-buttons">
-        <button class="action-btn" onclick="addTask()">Add</button>
-        <button class="cancel-btn" onclick="hideAddTaskForm()">Cancel</button>
-    </div>
+{% else %}
+<div class="no-project">
+    <button class="action-btn" onclick="showCreateProjectForm()">+ New Project</button>
 </div>
-
-<!-- Assign Modal (hidden by default) -->
-<div id="assign-modal" class="modal" style="display: none;">
-    <div class="modal-content">
-        <h4>Assign Task</h4>
-        <p id="assign-task-title"></p>
-        <input type="hidden" id="assign-task-id">
-        <select id="agent-select">
-            {% for agent in agents %}
-            <option value="{{ agent.id }}" data-name="{{ agent.name }}">{{ agent.name }}</option>
-            {% endfor %}
-        </select>
-        <div class="form-buttons">
-            <button class="action-btn" onclick="assignTask()">Assign</button>
-            <button class="cancel-btn" onclick="hideAssignModal()">Cancel</button>
-        </div>
-    </div>
-</div>
+{% endif %}

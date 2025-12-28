@@ -427,11 +427,16 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     res.json({ status: 'removed' });
   });
 
-  // Trigger agent to respond to latest message in room
+  // Trigger agent to respond to latest message in room (or start conversation)
   app.post('/agents/:agentId/step', async (req: Request, res: Response) => {
     const agentId = req.params.agentId as AgentId;
     const roomId = (req.body.roomId || 'general') as RoomId;
     console.log('[INFO] Step requested', { agentId, roomId });
+
+    // Get room info for context
+    const roomStmt = runtime.database.db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?');
+    const room = roomStmt.get(roomId, roomId) as { topic?: string } | undefined;
+    const roomTopic = room?.topic || 'general discussion';
 
     // Get recent messages from database for context
     const stmt = runtime.database.db.prepare(`
@@ -453,23 +458,35 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       attachments: string;
     }>;
 
+    let contextMessages: ChatMessage[];
+    let triggerMessage: ChatMessage;
+
     if (rows.length === 0) {
-      res.status(400).json({ error: 'No messages in room to respond to' });
-      return;
+      // No messages - create a system prompt to start conversation
+      const systemPrompt = createChatMessage({
+        id: `system_${Date.now()}`,
+        roomId,
+        senderId: 'system',
+        senderName: 'System',
+        content: `You've just joined the #${roomId} room. The topic is: "${roomTopic}". Start or contribute to the conversation based on your personality and the room topic.`,
+        type: 'system',
+        timestamp: Date.now()
+      });
+      contextMessages = [systemPrompt];
+      triggerMessage = systemPrompt;
+    } else {
+      // Convert to ChatMessage format (oldest first for context)
+      contextMessages = rows.reverse().map(row => createChatMessage({
+        id: row.id,
+        roomId: row.room_id as RoomId,
+        senderId: row.sender_id,
+        senderName: row.sender_name,
+        content: row.content,
+        type: row.type as 'chat' | 'join' | 'leave' | 'system',
+        timestamp: row.timestamp
+      }));
+      triggerMessage = contextMessages[contextMessages.length - 1];
     }
-
-    // Convert to ChatMessage format (oldest first for context)
-    const contextMessages: ChatMessage[] = rows.reverse().map(row => createChatMessage({
-      id: row.id,
-      roomId: row.room_id as RoomId,
-      senderId: row.sender_id,
-      senderName: row.sender_name,
-      content: row.content,
-      type: row.type as 'chat' | 'join' | 'leave' | 'system',
-      timestamp: row.timestamp
-    }));
-
-    const triggerMessage = contextMessages[contextMessages.length - 1];
 
     // Send RESPOND_TO_MESSAGE directly to the agent
     runtime.actors.send(agentAddress(agentId), respondToMessage(

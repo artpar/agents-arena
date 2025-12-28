@@ -9,7 +9,7 @@
             </span>
             <span class="agent-actions">
                 <button class="step-btn"
-                        onclick="stepAgent('{{ agent.id }}')"
+                        onclick="stepAgent('{{ agent.id }}', this)"
                         title="Make {{ agent.name }} respond">▶</button>
                 <button class="remove-btn"
                         hx-delete="/agents/{{ agent.id }}"
