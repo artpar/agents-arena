@@ -714,6 +714,7 @@ function handleAgentsLoaded(
   msg: AgentsLoadedMsg
 ): readonly [DirectorState, readonly Effect[]] {
   const { agents } = msg;
+  const defaultRoomId = 'general' as RoomId;
 
   // Build agents record
   const agentsRecord: Record<string, AgentConfig> = { ...state.agents };
@@ -726,8 +727,15 @@ function handleAgentsLoaded(
     agents: Object.freeze(agentsRecord)
   });
 
-  // Spawn agent actors
-  const effects: Effect[] = agents.map(config => spawnAgentActor(config));
+  // Spawn agent actors AND join them to default room
+  const effects: Effect[] = [];
+  for (const config of agents) {
+    effects.push(
+      spawnAgentActor(config),
+      sendToRoom(defaultRoomId, agentJoinedMsg(config.id, config.name)),
+      sendToAgent(config.id, joinRoom(defaultRoomId))
+    );
+  }
 
   return [newState, Object.freeze(effects)];
 }
