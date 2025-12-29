@@ -333,27 +333,50 @@ test.describe('Agent Arena Web UI', () => {
   });
 
   test.describe('Status Panel', () => {
-    // Status panel is hidden at small viewport heights via CSS media query
-    test('should display status section', async ({ page }) => {
-      const viewport = page.viewportSize();
-      test.skip(viewport !== null && viewport.height < 600, 'Status panel hidden at small height');
+    // Status panel visibility depends on viewport height (hidden at <=500px via CSS)
+    test('should display status section at normal height or be hidden at small height', async ({ page }) => {
       await page.goto('/');
-      await expect(page.locator('#status-panel')).toBeVisible();
-      await expect(page.locator('#status-panel h2')).toContainText('Status');
+      const viewport = page.viewportSize();
+      const statusPanel = page.locator('#status-panel');
+
+      if (viewport && viewport.height <= 500) {
+        // At small heights, status panel should be hidden by CSS
+        await expect(statusPanel).toBeHidden();
+      } else {
+        // At normal heights, status panel should be visible
+        await expect(statusPanel).toBeVisible();
+        await expect(page.locator('#status-panel h2')).toContainText('Status');
+      }
     });
 
-    test('should show running status', async ({ page }) => {
-      const viewport = page.viewportSize();
-      test.skip(viewport !== null && viewport.height < 600, 'Status panel hidden at small height');
+    test('should show running status at normal height or verify API at small height', async ({ page, request }) => {
       await page.goto('/');
-      await expect(page.locator('#status-running')).toBeVisible();
+      const viewport = page.viewportSize();
+
+      if (viewport && viewport.height <= 500) {
+        // At small heights, verify status via API instead
+        const statusResponse = await request.get('/api/status');
+        expect(statusResponse.ok()).toBeTruthy();
+        const status = await statusResponse.json();
+        expect(status).toHaveProperty('running');
+      } else {
+        await expect(page.locator('#status-running')).toBeVisible();
+      }
     });
 
-    test('should show mode', async ({ page }) => {
-      const viewport = page.viewportSize();
-      test.skip(viewport !== null && viewport.height < 600, 'Status panel hidden at small height');
+    test('should show mode at normal height or verify API at small height', async ({ page, request }) => {
       await page.goto('/');
-      await expect(page.locator('#status-mode')).toBeVisible();
+      const viewport = page.viewportSize();
+
+      if (viewport && viewport.height <= 500) {
+        // At small heights, verify status via API instead
+        const statusResponse = await request.get('/api/status');
+        expect(statusResponse.ok()).toBeTruthy();
+        const status = await statusResponse.json();
+        expect(status).toHaveProperty('mode');
+      } else {
+        await expect(page.locator('#status-mode')).toBeVisible();
+      }
     });
   });
 

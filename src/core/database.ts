@@ -216,16 +216,35 @@ export interface RoomRow {
 
 export function createRoom(id: string, name: string, description: string = '', topic: string = ''): RoomRow {
   const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT INTO rooms (id, name, description, topic)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET
-      description = excluded.description,
-      topic = excluded.topic,
-      updated_at = datetime('now')
-    RETURNING *
-  `);
-  return stmt.get(id, name, description, topic) as RoomRow;
+  // Check if description column exists (runtime/database.ts schema doesn't have it)
+  const tableInfo = db.prepare('PRAGMA table_info(rooms)').all() as { name: string }[];
+  const hasDescription = tableInfo.some(col => col.name === 'description');
+
+  if (hasDescription) {
+    const stmt = db.prepare(`
+      INSERT INTO rooms (id, name, description, topic)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        description = excluded.description,
+        topic = excluded.topic,
+        updated_at = datetime('now')
+      RETURNING *
+    `);
+    return stmt.get(id, name, description, topic) as RoomRow;
+  } else {
+    // Schema without description column (runtime/database.ts)
+    const stmt = db.prepare(`
+      INSERT INTO rooms (id, name, config)
+      VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        updated_at = strftime('%s', 'now') * 1000
+      RETURNING *
+    `);
+    const config = JSON.stringify({ description, topic });
+    const result = stmt.get(id, name, config) as any;
+    return { ...result, description, topic } as RoomRow;
+  }
 }
 
 export function getRoom(nameOrId: string): RoomRow | undefined {
