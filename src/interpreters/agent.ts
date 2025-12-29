@@ -487,6 +487,7 @@ function handleToolCallsNeeded(
   const context = createToolContext({
     agentId,
     agentName,
+    roomId,
     workspacePath: state.workspacePath,
     sharedWorkspacePath: state.sharedWorkspacePath
   });

@@ -18,6 +18,7 @@ import { AgentId } from '../values/index.js';
 export interface ToolContext {
   readonly agentId: AgentId;
   readonly agentName: string;
+  readonly roomId: string;
   readonly workspacePath: string;
   readonly sharedWorkspacePath: string;
   readonly projectId?: string;
@@ -30,6 +31,7 @@ export interface ToolContext {
 export function createToolContext(params: {
   agentId: AgentId;
   agentName: string;
+  roomId: string;
   workspacePath: string;
   sharedWorkspacePath: string;
   projectId?: string;
@@ -38,6 +40,7 @@ export function createToolContext(params: {
   return Object.freeze({
     agentId: params.agentId,
     agentName: params.agentName,
+    roomId: params.roomId,
     workspacePath: params.workspacePath,
     sharedWorkspacePath: params.sharedWorkspacePath,
     projectId: params.projectId,

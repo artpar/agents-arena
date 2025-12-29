@@ -92,7 +92,7 @@ export function createToolsExecutor(
           const toolResult = result as ToolResult;
           onToolResult(
             execEffect.context.agentId,
-            'general', // TODO: Get actual room from context
+            execEffect.context.roomId,
             [toolResult],
             execEffect.replyTag
           );
@@ -101,7 +101,7 @@ export function createToolsExecutor(
           const toolResults = result as readonly ToolResult[];
           onToolResult(
             batchEffect.context.agentId,
-            'general', // TODO: Get actual room from context
+            batchEffect.context.roomId,
             [...toolResults],
             batchEffect.replyTag
           );
