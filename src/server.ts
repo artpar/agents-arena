@@ -1083,14 +1083,15 @@ Stay in character as ${dbAgent.name}. Never say you are Claude or an AI assistan
   // Start runtime
   await runtime.start();
 
-  // Create default room
+  // Create default room (preserve existing topic if room already exists)
+  const existingRoom = getRoom('general');
   runtime.actors.send(directorAddress(), {
     type: 'CREATE_ROOM',
     config: {
       id: 'general' as RoomId,
       name: 'general',
-      description: 'General discussion',
-      topic: ''
+      description: existingRoom?.description || 'General discussion',
+      topic: existingRoom?.topic || ''  // Preserve existing topic
     }
   });
 

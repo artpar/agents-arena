@@ -389,17 +389,40 @@ function updateAgentStats(
 function saveRoom(conn: DatabaseConnection, effect: DbSaveRoom): void {
   const { config } = effect;
 
-  const stmt = conn.db.prepare(`
-    INSERT OR REPLACE INTO rooms (id, name, config, updated_at)
-    VALUES (?, ?, ?, ?)
-  `);
+  // Check if topic column exists (added via migration)
+  const tableInfo = conn.db.prepare('PRAGMA table_info(rooms)').all() as { name: string }[];
+  const hasTopic = tableInfo.some(col => col.name === 'topic');
 
-  stmt.run(
-    config.id,
-    config.name,
-    JSON.stringify(config),
-    Date.now()
-  );
+  if (hasTopic) {
+    // Use INSERT ON CONFLICT to preserve existing topic when new topic is empty
+    const stmt = conn.db.prepare(`
+      INSERT INTO rooms (id, name, config, topic, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        config = excluded.config,
+        topic = CASE WHEN excluded.topic != '' THEN excluded.topic ELSE rooms.topic END,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(
+      config.id,
+      config.name,
+      JSON.stringify(config),
+      config.topic || '',
+      Date.now()
+    );
+  } else {
+    const stmt = conn.db.prepare(`
+      INSERT OR REPLACE INTO rooms (id, name, config, updated_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    stmt.run(
+      config.id,
+      config.name,
+      JSON.stringify(config),
+      Date.now()
+    );
+  }
 }
 
 function loadRoom(

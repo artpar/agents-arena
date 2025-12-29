@@ -225,25 +225,41 @@ export function createRoom(id: string, name: string, description: string = '', t
       INSERT INTO rooms (id, name, description, topic)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
-        description = excluded.description,
-        topic = excluded.topic,
+        description = CASE WHEN excluded.description != '' THEN excluded.description ELSE rooms.description END,
+        topic = CASE WHEN excluded.topic != '' THEN excluded.topic ELSE rooms.topic END,
         updated_at = datetime('now')
       RETURNING *
     `);
     return stmt.get(id, name, description, topic) as RoomRow;
   } else {
-    // Schema without description column (runtime/database.ts)
-    const stmt = db.prepare(`
-      INSERT INTO rooms (id, name, config)
-      VALUES (?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        updated_at = strftime('%s', 'now') * 1000
-      RETURNING *
-    `);
-    const config = JSON.stringify({ description, topic });
-    const result = stmt.get(id, name, config) as any;
-    return { ...result, description, topic } as RoomRow;
+    // Schema without description column - but topic column exists via migration
+    const hasTopic = tableInfo.some(col => col.name === 'topic');
+    if (hasTopic) {
+      const stmt = db.prepare(`
+        INSERT INTO rooms (id, name, config, topic)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          topic = CASE WHEN excluded.topic != '' THEN excluded.topic ELSE rooms.topic END,
+          updated_at = strftime('%s', 'now') * 1000
+        RETURNING *
+      `);
+      const config = JSON.stringify({ description });
+      const result = stmt.get(id, name, config, topic) as any;
+      return { ...result, description } as RoomRow;
+    } else {
+      const stmt = db.prepare(`
+        INSERT INTO rooms (id, name, config)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          updated_at = strftime('%s', 'now') * 1000
+        RETURNING *
+      `);
+      const config = JSON.stringify({ description, topic });
+      const result = stmt.get(id, name, config) as any;
+      return { ...result, description, topic } as RoomRow;
+    }
   }
 }
 
