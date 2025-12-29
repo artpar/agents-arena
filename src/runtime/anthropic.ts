@@ -142,6 +142,17 @@ async function callAnthropicApi(
 ): Promise<ApiCallResult> {
   const { agentId, request, replyTag } = effect;
 
+  // Log full request details for debugging
+  console.log('\n=== LLM REQUEST ===');
+  console.log('Agent:', agentId);
+  console.log('Model:', request.model);
+  console.log('System Prompt:', request.system ? request.system.substring(0, 500) + (request.system.length > 500 ? '...' : '') : '[NONE]');
+  console.log('Messages:', JSON.stringify(request.messages.map(m => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content.substring(0, 200) : '[array]'
+  })), null, 2));
+  console.log('===================\n');
+
   logger.info('Calling Anthropic API', {
     agentId,
     replyTag,
@@ -188,6 +199,17 @@ async function callAnthropicApi(
 
     // Convert to our response type
     const anthropicResponse = toAnthropicResponse(response);
+
+    // Log full response for debugging
+    console.log('\n=== LLM RESPONSE ===');
+    console.log('Agent:', agentId);
+    console.log('Stop Reason:', anthropicResponse.stop_reason);
+    console.log('Content:', JSON.stringify(anthropicResponse.content.map(c => {
+      if (c.type === 'text') return { type: 'text', text: c.text.substring(0, 300) + (c.text.length > 300 ? '...' : '') };
+      if (c.type === 'tool_use') return { type: 'tool_use', name: c.name };
+      return c;
+    }), null, 2));
+    console.log('====================\n');
 
     logger.debug('Anthropic API response', {
       agentId,

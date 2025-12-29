@@ -448,19 +448,42 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
 
       // Spawn the agent actor
       console.log('[INFO] Spawning missing agent actor', { agentId, name: dbAgent.name });
-      const config = JSON.parse(dbAgent.config_json || '{}');
+      const config = JSON.parse(dbAgent.config || '{}');
+
+      // Generate system prompt from agent personality if not set
+      let systemPrompt = dbAgent.system_prompt || config.systemPrompt || config.system_prompt || '';
+      if (!systemPrompt && dbAgent.name) {
+        const description = dbAgent.description || config.description || '';
+        const speakingStyle = dbAgent.speaking_style || config.speaking_style || '';
+        const interests = JSON.parse(dbAgent.interests || '[]');
+        const traits = JSON.parse(dbAgent.personality_traits || '{}');
+        const traitsList = Object.entries(traits)
+          .filter(([_, v]) => (v as number) > 0.5)
+          .map(([k]) => k)
+          .join(', ');
+
+        systemPrompt = `You are ${dbAgent.name}, a team member in a collaborative discussion.
+
+${description ? `About you: ${description}` : ''}
+${speakingStyle ? `Your communication style: ${speakingStyle}` : ''}
+${interests.length > 0 ? `Your interests include: ${interests.join(', ')}` : ''}
+${traitsList ? `Key traits: ${traitsList}` : ''}
+
+Stay in character as ${dbAgent.name}. Never say you are Claude or an AI assistant. Engage naturally in conversations, share your perspective based on your expertise and personality. Be concise and conversational.`;
+      }
+
       const agentConfig = createAgentConfig({
         id: agentId,
         name: dbAgent.name,
-        description: config.description || '',
-        systemPrompt: config.systemPrompt || config.system_prompt || '',
-        model: config.model || 'haiku',
-        temperature: config.temperature || 0.7,
+        description: dbAgent.description || config.description || '',
+        systemPrompt,
+        model: dbAgent.model || config.model || 'haiku',
+        temperature: dbAgent.temperature || config.temperature || 0.7,
         tools: config.tools || [],
-        personalityTraits: config.personalityTraits || config.personality_traits || {},
-        speakingStyle: config.speakingStyle || config.speaking_style || '',
-        interests: config.interests || [],
-        responseTendency: config.responseTendency || config.response_tendency || 0.5
+        personalityTraits: JSON.parse(dbAgent.personality_traits || '{}') || config.personalityTraits || {},
+        speakingStyle: dbAgent.speaking_style || config.speakingStyle || '',
+        interests: JSON.parse(dbAgent.interests || '[]') || config.interests || [],
+        responseTendency: dbAgent.response_tendency || config.responseTendency || 0.5
       });
 
       // Send spawn message to director and wait for it to be processed
@@ -1075,19 +1098,45 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   const dbAgents = getDbAgents();
   if (dbAgents.length > 0) {
     const agentConfigs: AgentConfig[] = dbAgents.map(row => {
-      const config = JSON.parse(row.config_json || '{}');
+      // Parse config from the 'config' column (not 'config_json')
+      const config = JSON.parse(row.config || '{}');
+
+      // Generate system prompt from agent personality if not set
+      let systemPrompt = row.system_prompt || config.systemPrompt || config.system_prompt || '';
+      if (!systemPrompt && row.name) {
+        // Build a persona-based system prompt from available data
+        const description = row.description || config.description || '';
+        const speakingStyle = row.speaking_style || config.speaking_style || config.speakingStyle || '';
+        const interests = JSON.parse(row.interests || config.interests || '[]');
+        const traits = JSON.parse(row.personality_traits || '{}');
+
+        const traitsList = Object.entries(traits)
+          .filter(([_, v]) => (v as number) > 0.5)
+          .map(([k]) => k)
+          .join(', ');
+
+        systemPrompt = `You are ${row.name}, a team member in a collaborative discussion.
+
+${description ? `About you: ${description}` : ''}
+${speakingStyle ? `Your communication style: ${speakingStyle}` : ''}
+${interests.length > 0 ? `Your interests include: ${interests.join(', ')}` : ''}
+${traitsList ? `Key traits: ${traitsList}` : ''}
+
+Stay in character as ${row.name}. Never say you are Claude or an AI assistant. Engage naturally in conversations, share your perspective based on your expertise and personality. Be concise and conversational.`;
+      }
+
       return createAgentConfig({
         id: row.id as AgentId,
         name: row.name,
-        description: config.description || '',
-        systemPrompt: config.systemPrompt || config.system_prompt || '',
-        model: config.model || 'haiku',
-        temperature: config.temperature || 0.7,
+        description: config.description || row.description || '',
+        systemPrompt,
+        model: row.model || config.model || 'haiku',
+        temperature: row.temperature || config.temperature || 0.7,
         tools: config.tools || [],
-        personalityTraits: config.personalityTraits || config.personality_traits || {},
-        speakingStyle: config.speakingStyle || config.speaking_style || '',
-        interests: config.interests || [],
-        responseTendency: config.responseTendency || config.response_tendency || 0.5,
+        personalityTraits: JSON.parse(row.personality_traits || '{}') || config.personalityTraits || {},
+        speakingStyle: row.speaking_style || config.speakingStyle || '',
+        interests: JSON.parse(row.interests || '[]') || config.interests || [],
+        responseTendency: row.response_tendency || config.responseTendency || 0.5,
         background: config.background || null,
         expertise: config.expertise || [],
         warStories: config.warStories || config.war_stories || [],
