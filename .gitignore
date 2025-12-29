@@ -33,3 +33,4 @@ logs/
 # Runtime
 *.pid
 uploads/
+test-results/
