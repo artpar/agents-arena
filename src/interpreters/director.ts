@@ -224,6 +224,14 @@ export interface StopMsg {
 }
 
 /**
+ * Set the conversation mode.
+ */
+export interface SetModeMsg {
+  readonly type: 'SET_MODE';
+  readonly mode: string;
+}
+
+/**
  * Spawn a new agent (alias for REGISTER_AGENT).
  */
 export interface SpawnAgentMsg {
@@ -267,6 +275,7 @@ export type DirectorMessage =
   | InjectMessageMsg
   | StartMsg
   | StopMsg
+  | SetModeMsg
   | SpawnAgentMsg
   | StopAgentMsg
   | JoinRoomMsg;
@@ -386,6 +395,9 @@ export const directorInterpreter: Interpreter<DirectorState, DirectorMessage> = 
 
     case 'STOP':
       return handleStop(state);
+
+    case 'SET_MODE':
+      return handleSetMode(state, message);
 
     case 'SPAWN_AGENT':
       return handleRegisterAgent(state, { type: 'REGISTER_AGENT', config: message.config });
@@ -826,6 +838,18 @@ function handleStop(
   ];
 
   return [newState, Object.freeze(effects)];
+}
+
+function handleSetMode(
+  state: DirectorState,
+  msg: SetModeMsg
+): readonly [DirectorState, readonly Effect[]] {
+  const newState: DirectorState = Object.freeze({
+    ...state,
+    mode: msg.mode
+  });
+
+  return stateOnly(newState);
 }
 
 function handleJoinRoom(

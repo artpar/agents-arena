@@ -323,7 +323,9 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       type: 'STOP'
     });
 
-    const status = { running: false, mode: 'hybrid', max_turns: 20, current_round: 0 };
+    // Get current status to preserve mode
+    const currentStatus = getStatus(runtime);
+    const status = { running: false, mode: currentStatus.mode || 'hybrid', max_turns: currentStatus.max_turns || 20, current_round: 0 };
     // Render controls and status panel with OOB swap
     const controlsHtml = await new Promise<string>((resolve, reject) => {
       req.app.render('partials/controls.html', { status }, (err, html) => {
@@ -346,6 +348,16 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
 
   app.get('/api/status', (req: Request, res: Response) => {
     res.json(getStatus(runtime));
+  });
+
+  // Set conversation mode
+  app.post('/api/mode', (req: Request, res: Response) => {
+    const mode = req.body.mode || 'hybrid';
+    runtime.actors.send(directorAddress(), {
+      type: 'SET_MODE',
+      mode
+    });
+    res.json({ mode });
   });
 
   app.get('/api/agents', (req: Request, res: Response) => {

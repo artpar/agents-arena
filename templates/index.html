@@ -1646,8 +1646,13 @@
         });
 
         function updateMode(mode) {
-            // Mode will be used on next start
-            console.log('Mode set to:', mode);
+            fetch('/api/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            }).then(res => res.json())
+              .then(data => console.log('Mode set to:', data.mode))
+              .catch(err => console.error('Failed to set mode:', err));
         }
 
         // Trigger agent to respond
