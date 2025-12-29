@@ -73,6 +73,7 @@ const __dirname = dirname(__filename);
 // Paths
 const TEMPLATES_DIR = join(__dirname, '..', 'templates');
 const UPLOADS_DIR = join(__dirname, '..', 'uploads');
+const PUBLIC_DIR = join(__dirname, '..', 'public');
 
 // Ensure uploads directory exists
 if (!existsSync(UPLOADS_DIR)) {
@@ -158,6 +159,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use('/uploads', express.static(UPLOADS_DIR));
+  app.use('/public', express.static(PUBLIC_DIR));
 
   // ============================================================================
   // WEBSOCKET SETUP
@@ -191,6 +193,11 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       agents: getAgents(runtime),
       current_room: 'general'
     });
+  });
+
+  // New vanilla JS SPA
+  app.get('/app', (req: Request, res: Response) => {
+    res.sendFile(join(PUBLIC_DIR, 'app.html'));
   });
 
   app.get('/messages', (req: Request, res: Response) => {
