@@ -39,7 +39,8 @@ import {
   withLoadedMessages,
   resetRoom,
   clearMessages,
-  selectResponders
+  selectResponders,
+  ParticipantInfo
 } from '../values/room.js';
 import {
   ChatMessage,
@@ -82,6 +83,7 @@ export interface AgentJoinedMsg {
   readonly type: 'AGENT_JOINED';
   readonly agentId: AgentId;
   readonly agentName: string;
+  readonly agentDescription?: string;
 }
 
 /**
@@ -175,8 +177,8 @@ export function agentResponse(
   return Object.freeze({ type: 'AGENT_RESPONSE', agentId, message });
 }
 
-export function agentJoinedMsg(agentId: AgentId, agentName: string): AgentJoinedMsg {
-  return Object.freeze({ type: 'AGENT_JOINED', agentId, agentName });
+export function agentJoinedMsg(agentId: AgentId, agentName: string, agentDescription?: string): AgentJoinedMsg {
+  return Object.freeze({ type: 'AGENT_JOINED', agentId, agentName, agentDescription });
 }
 
 export function agentLeftMsg(agentId: AgentId, agentName: string): AgentLeftMsg {
@@ -221,20 +223,26 @@ export function requestResponses(
 export interface RespondToMessageMsg extends ActorMessage {
   readonly type: 'RESPOND_TO_MESSAGE';
   readonly roomId: RoomId;
+  readonly roomTopic?: string;
   readonly contextMessages: readonly ChatMessage[];
   readonly triggerMessage: ChatMessage;
+  readonly participants: readonly ParticipantInfo[];
 }
 
 export function respondToMessage(
   roomId: RoomId,
   contextMessages: readonly ChatMessage[],
-  triggerMessage: ChatMessage
+  triggerMessage: ChatMessage,
+  participants: readonly ParticipantInfo[],
+  roomTopic?: string
 ): RespondToMessageMsg {
   return Object.freeze({
     type: 'RESPOND_TO_MESSAGE',
     roomId,
+    roomTopic,
     contextMessages,
-    triggerMessage
+    triggerMessage,
+    participants
   });
 }
 
@@ -325,13 +333,18 @@ function handleUserMessage(
     broadcastToRoom(roomId, messageAdded(roomId, msg.message))
   ];
 
+  // Get participants list for context
+  const participants = Object.values(state.participants);
+
   // Send respond requests to agents
   for (const agentId of responders) {
     effects.push(
       sendToAgent(agentId, respondToMessage(
         roomId,
         newState.messages,
-        msg.message
+        msg.message,
+        participants,
+        state.config.topic
       ))
     );
   }
@@ -363,8 +376,8 @@ function handleAgentJoined(
 ): readonly [RoomState, readonly Effect[]] {
   const roomId = state.config.id;
 
-  // Update state
-  const newState = withAgentJoined(state, msg.agentId);
+  // Update state with participant info
+  const newState = withAgentJoined(state, msg.agentId, msg.agentName, msg.agentDescription);
 
   // Create join message
   const joinMessage = createChatMessage({
@@ -484,12 +497,17 @@ function handleRequestResponses(
     pendingResponders: Object.freeze([...msg.responders])
   });
 
+  // Get participants list for context
+  const participants = Object.values(state.participants);
+
   // Send respond requests to each agent
   const effects: Effect[] = msg.responders.map(agentId =>
     sendToAgent(agentId, respondToMessage(
       roomId,
       state.messages,
-      msg.contextMessage
+      msg.contextMessage,
+      participants,
+      state.config.topic
     ))
   );
 

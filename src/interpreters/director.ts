@@ -522,7 +522,7 @@ function handleRegisterAgent(
     spawnAgentActor(config),
     dbSaveAgent(config),
     // Auto-join the agent to the general room
-    sendToRoom(defaultRoomId, agentJoinedMsg(config.id, config.name)),
+    sendToRoom(defaultRoomId, agentJoinedMsg(config.id, config.name, config.description)),
     sendToAgent(config.id, joinRoom(defaultRoomId))
   ];
 
@@ -591,7 +591,7 @@ function handleMoveAgentToRoom(
 
   // Join new room
   effects.push(
-    sendToRoom(roomId, agentJoinedMsg(agentId, agent.name)),
+    sendToRoom(roomId, agentJoinedMsg(agentId, agent.name, agent.description)),
     sendToAgent(agentId, joinRoom(roomId))
   );
 
@@ -732,7 +732,7 @@ function handleAgentsLoaded(
   for (const config of agents) {
     effects.push(
       spawnAgentActor(config),
-      sendToRoom(defaultRoomId, agentJoinedMsg(config.id, config.name)),
+      sendToRoom(defaultRoomId, agentJoinedMsg(config.id, config.name, config.description)),
       sendToAgent(config.id, joinRoom(defaultRoomId))
     );
   }

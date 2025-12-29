@@ -146,7 +146,7 @@ async function callAnthropicApi(
   console.log('\n=== LLM REQUEST ===');
   console.log('Agent:', agentId);
   console.log('Model:', request.model);
-  console.log('System Prompt:', request.system ? request.system.substring(0, 500) + (request.system.length > 500 ? '...' : '') : '[NONE]');
+  console.log('System Prompt:', request.system ? request.system.substring(0, 1000) + (request.system.length > 1000 ? '...' : '') : '[NONE]');
   console.log('Messages:', JSON.stringify(request.messages.map(m => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content.substring(0, 200) : '[array]'

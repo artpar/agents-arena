@@ -78,12 +78,23 @@ export function createGeneralRoom(): RoomConfig {
 }
 
 // ============================================================================
+// PARTICIPANT INFO
+// ============================================================================
+
+export interface ParticipantInfo {
+  readonly id: AgentId;
+  readonly name: string;
+  readonly description: string;
+}
+
+// ============================================================================
 // ROOM STATE (Runtime state)
 // ============================================================================
 
 export interface RoomState {
   readonly config: RoomConfig;
   readonly agents: readonly AgentId[];
+  readonly participants: Readonly<Record<string, ParticipantInfo>>;  // agentId -> participant info
   readonly messages: readonly ChatMessage[];
   readonly phase: RoomPhase;
   readonly pendingResponders: readonly AgentId[];  // Agents who haven't responded
@@ -98,6 +109,7 @@ export function createRoomState(config: RoomConfig): RoomState {
   return Object.freeze({
     config,
     agents: Object.freeze([]),
+    participants: Object.freeze({}),
     messages: Object.freeze([]),
     phase: 'empty',
     pendingResponders: Object.freeze([]),
@@ -113,16 +125,32 @@ export function createRoomState(config: RoomConfig): RoomState {
 /**
  * Add an agent to the room.
  */
-export function withAgentJoined(state: RoomState, agentId: AgentId): RoomState {
+export function withAgentJoined(
+  state: RoomState,
+  agentId: AgentId,
+  agentName?: string,
+  agentDescription?: string
+): RoomState {
   if (state.agents.includes(agentId)) {
     return state; // Already in room
   }
   const newAgents = Object.freeze([...state.agents, agentId]);
   const newPhase: RoomPhase = newAgents.length > 0 ? 'active' : 'empty';
 
+  // Add participant info if provided
+  const newParticipants = agentName ? Object.freeze({
+    ...state.participants,
+    [agentId]: Object.freeze({
+      id: agentId,
+      name: agentName,
+      description: agentDescription || ''
+    })
+  }) : state.participants;
+
   return Object.freeze({
     ...state,
     agents: newAgents,
+    participants: newParticipants,
     phase: newPhase,
     lastActivity: Date.now()
   });
@@ -136,9 +164,13 @@ export function withAgentLeft(state: RoomState, agentId: AgentId): RoomState {
   const newPending = Object.freeze(state.pendingResponders.filter(id => id !== agentId));
   const newPhase: RoomPhase = newAgents.length === 0 ? 'empty' : state.phase;
 
+  // Remove participant info
+  const { [agentId]: removed, ...remainingParticipants } = state.participants;
+
   return Object.freeze({
     ...state,
     agents: newAgents,
+    participants: Object.freeze(remainingParticipants),
     pendingResponders: newPending,
     phase: newPhase,
     lastActivity: Date.now()

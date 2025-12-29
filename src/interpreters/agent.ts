@@ -328,7 +328,7 @@ function handleRespondToMessage(
   state: AgentInterpreterState,
   msg: RespondToMessageMsg
 ): readonly [AgentInterpreterState, readonly Effect[]] {
-  const { roomId, contextMessages, triggerMessage } = msg;
+  const { roomId, contextMessages, triggerMessage, participants, roomTopic } = msg;
   const agentId = state.config.id;
   const agentName = state.config.name;
 
@@ -350,12 +350,39 @@ function handleRespondToMessage(
 
   // If no messages at all, create a starter prompt
   if (apiMessages.length === 0) {
+    const topicInfo = roomTopic ? `The topic is: "${roomTopic}". ` : '';
     apiMessages = Object.freeze([
       Object.freeze({
         role: 'user' as const,
-        content: '[System: Start or join the conversation. Share your thoughts on the topic at hand.]'
+        content: `[System]: You've just joined the #${roomId} room. ${topicInfo}Start or contribute to the conversation based on your personality and the room topic.`
       })
     ]);
+  }
+
+  // Build enhanced system prompt with room context
+  let systemPrompt = state.config.systemPrompt || '';
+
+  // Add room and participant context
+  const otherParticipants = participants?.filter(p => p.id !== agentId) || [];
+  if (otherParticipants.length > 0 || roomTopic) {
+    const contextParts: string[] = [];
+
+    if (roomTopic) {
+      contextParts.push(`\n\nRoom Topic: ${roomTopic}`);
+    }
+
+    if (otherParticipants.length > 0) {
+      contextParts.push('\n\nOther participants in this room:');
+      for (const p of otherParticipants) {
+        if (p.description) {
+          contextParts.push(`- ${p.name}: ${p.description}`);
+        } else {
+          contextParts.push(`- ${p.name}`);
+        }
+      }
+    }
+
+    systemPrompt = systemPrompt + contextParts.join('\n');
   }
 
   // Create API request with tools
@@ -364,7 +391,7 @@ function handleRespondToMessage(
   const request = createAnthropicRequest({
     model: resolveModel(state.config.model),
     messages: apiMessages,
-    system: state.config.systemPrompt,
+    system: systemPrompt,
     tools: toolDefinitions,
     temperature: state.config.temperature,
     maxTokens: 4096

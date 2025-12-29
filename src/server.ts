@@ -48,6 +48,7 @@ import {
   agentAddress
 } from './effects/actor.js';
 import { respondToMessage } from './interpreters/room.js';
+import { ParticipantInfo } from './values/room.js';
 import { agentsLoaded } from './interpreters/director.js';
 import { AgentConfig, createAgentConfig } from './values/agent.js';
 import {
@@ -564,11 +565,23 @@ Stay in character as ${dbAgent.name}. Never say you are Claude or an AI assistan
       triggerMessage = contextMessages[contextMessages.length - 1];
     }
 
-    // Send RESPOND_TO_MESSAGE directly to the agent
+    // Get participants from database for context
+    const allAgents = getDbAgents();
+    const participants: ParticipantInfo[] = allAgents
+      .filter(a => a.id !== agentId)  // Exclude the current agent
+      .map(a => ({
+        id: a.id as AgentId,
+        name: a.name,
+        description: a.description || ''
+      }));
+
+    // Send RESPOND_TO_MESSAGE directly to the agent with participants
     runtime.actors.send(agentAddress(agentId), respondToMessage(
       roomId,
       contextMessages,
-      triggerMessage
+      triggerMessage,
+      participants,
+      roomTopic
     ));
 
     res.json({ status: 'stepped', agentId, roomId });
