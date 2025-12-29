@@ -135,6 +135,13 @@
           data.isTyping ? typing.add(data.agentName) : typing.delete(data.agentName);
           update({ typing });
           break;
+        case 'agent_status':
+          // Update agent status in real-time without full refresh
+          const updatedAgents = state.agents.map(a =>
+            a.id === data.agentId ? { ...a, status: data.status } : a
+          );
+          update({ agents: updatedAgents });
+          break;
         case 'status_update':
           update({ status: { ...state.status, ...data } });
           break;

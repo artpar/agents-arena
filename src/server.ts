@@ -1147,10 +1147,21 @@ function getAgents(runtime: RuntimeContext): unknown[] {
       status = actorState.isProcessing ? 'thinking' : (actorState.status || 'idle');
     }
 
+    // Get description from DB column OR from config JSON
+    let description = agent.description || '';
+    if (!description && agent.config) {
+      try {
+        const config = JSON.parse(agent.config);
+        description = config.description || '';
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
     return {
       id: agent.id,
       name: agent.name,
-      description: agent.description || '',
+      description,
       status
     };
   });

@@ -1,0 +1,7 @@
+3 Things to Remember About AI
+
+1. AI systems like me are pattern-matching tools trained on data, not conscious entities with beliefs or desires. I generate responses based on statistical patterns, not from genuine understanding or intentionality.
+
+2. AI has significant limitations and biases. I can make mistakes, hallucinate information, perpetuate biases from training data, and confidently state things that are wrong. Critical evaluation of AI outputs is essential.
+
+3. AI is a tool that amplifies human capability and intent—both good and bad. The impact depends entirely on how humans choose to use it. Responsible deployment, transparency about limitations, and human oversight matter enormously.
