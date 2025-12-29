@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Persona Manager - Agent Arena</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1f2937; } ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+  <div id="app" class="max-w-6xl mx-auto p-4"></div>
+
+  <script type="module">
+    // ============================================================================
+    // STATE
+    // ============================================================================
+    const state = {
+      personas: [],
+      activeAgents: [],
+      selected: new Set(),
+      editing: null,
+      interests: [],
+      loading: true
+    };
+
+    const listeners = new Set();
+    function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+    function update(changes) { Object.assign(state, changes); listeners.forEach(fn => fn(state)); }
+
+    // ============================================================================
+    // API
+    // ============================================================================
+    const api = {
+      async getPersonas() { return (await fetch('/api/personas')).json(); },
+      async getPersona(id) { return (await fetch(`/api/personas/${encodeURIComponent(id)}`)).json(); },
+      async createPersona(data) {
+        const res = await fetch('/api/personas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Failed to create');
+        return res.json();
+      },
+      async updatePersona(id, data) {
+        const res = await fetch(`/api/personas/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Failed to update');
+        return res.json();
+      },
+      async deletePersona(id) { return fetch(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+      async bulkDelete(filenames) {
+        return fetch('/api/personas/bulk-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filenames }) });
+      },
+      async generate(prompt) {
+        const res = await fetch('/api/personas/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Generation failed');
+        return res.json();
+      },
+      async generateTeam(description, count) {
+        const res = await fetch('/api/personas/generate-team', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description, count }) });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Team generation failed');
+        return res.json();
+      },
+      async getAgents() { return (await fetch('/api/agents')).json(); }
+    };
+
+    // ============================================================================
+    // HELPERS
+    // ============================================================================
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+    function getFormData() {
+      return {
+        name: document.getElementById('name')?.value || '',
+        description: document.getElementById('description')?.value || '',
+        speaking_style: document.getElementById('speaking_style')?.value || '',
+        system_prompt: document.getElementById('system_prompt')?.value || '',
+        personality_traits: {
+          curiosity: parseFloat(document.getElementById('trait_curiosity')?.value || 0.5),
+          assertiveness: parseFloat(document.getElementById('trait_assertiveness')?.value || 0.5),
+          humor: parseFloat(document.getElementById('trait_humor')?.value || 0.5),
+          empathy: parseFloat(document.getElementById('trait_empathy')?.value || 0.5),
+          skepticism: parseFloat(document.getElementById('trait_skepticism')?.value || 0.5),
+          creativity: parseFloat(document.getElementById('trait_creativity')?.value || 0.5),
+        },
+        interests: state.interests,
+        response_tendency: parseFloat(document.getElementById('response_tendency')?.value || 0.5),
+        temperature: parseFloat(document.getElementById('temperature')?.value || 0.7),
+        model: document.getElementById('model')?.value || 'haiku',
+      };
+    }
+
+    function setFormData(p) {
+      document.getElementById('name').value = p.name || '';
+      document.getElementById('description').value = p.description || '';
+      document.getElementById('speaking_style').value = p.speaking_style || '';
+      document.getElementById('system_prompt').value = p.system_prompt || '';
+      const t = p.personality_traits || {};
+      document.getElementById('trait_curiosity').value = t.curiosity ?? 0.5;
+      document.getElementById('trait_assertiveness').value = t.assertiveness ?? 0.5;
+      document.getElementById('trait_humor').value = t.humor ?? 0.5;
+      document.getElementById('trait_empathy').value = t.empathy ?? 0.5;
+      document.getElementById('trait_skepticism').value = t.skepticism ?? 0.5;
+      document.getElementById('trait_creativity').value = t.creativity ?? 0.5;
+      document.getElementById('response_tendency').value = p.response_tendency ?? 0.5;
+      document.getElementById('temperature').value = p.temperature ?? 0.7;
+      document.getElementById('model').value = p.model || 'haiku';
+      update({ interests: p.interests || [] });
+    }
+
+    // ============================================================================
+    // RENDER
+    // ============================================================================
+    function renderHeader() {
+      return `
+        <header class="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
+          <h1 class="text-2xl font-bold text-pink-500">Persona Manager</h1>
+          <a href="/" class="text-gray-400 hover:text-pink-400">Back to Arena</a>
+        </header>
+      `;
+    }
+
+    function renderPersonaCard(p) {
+      const isActive = state.activeAgents.some(a => a.id === p._filename);
+      const isSelected = state.selected.has(p._filename);
+      const isEditing = state.editing === p._filename;
+      const traits = p.personality_traits || {};
+      const traitTags = Object.entries(traits).slice(0, 4).map(([k, v]) =>
+        `<span class="bg-gray-800 px-1.5 py-0.5 rounded text-xs text-gray-400">${k}: ${v}</span>`
+      ).join('');
+
+      return `
+        <div class="bg-gray-800 p-3 rounded-lg border-2 ${isEditing ? 'border-pink-500' : isSelected ? 'border-pink-500/50' : 'border-transparent'} hover:border-pink-500/30 transition-colors" data-id="${escapeHtml(p._filename)}">
+          <div class="flex items-start gap-2">
+            <input type="checkbox" class="mt-1 persona-check" value="${escapeHtml(p._filename)}" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelect('${escapeHtml(p._filename)}')">
+            <div class="flex-1 min-w-0 cursor-pointer" onclick="editPersona('${escapeHtml(p._filename)}')">
+              <div class="flex items-center gap-2 mb-1">
+                <h3 class="font-semibold text-white truncate">${escapeHtml(p.name)}</h3>
+                ${isActive ? '<span class="bg-green-600 text-xs px-1.5 py-0.5 rounded">ACTIVE</span>' : ''}
+              </div>
+              <p class="text-sm text-gray-400 mb-2 line-clamp-2">${escapeHtml((p.description || '').substring(0, 100))}</p>
+              <div class="flex flex-wrap gap-1">${traitTags}</div>
+            </div>
+            <button onclick="event.stopPropagation(); quickDelete('${escapeHtml(p._filename)}', '${escapeHtml(p.name)}')" class="text-gray-500 hover:text-pink-500 text-lg px-1">&times;</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPersonaList() {
+      if (state.loading) return '<div class="text-center text-gray-500 py-8">Loading...</div>';
+      if (!state.personas.length) return '<div class="text-center text-gray-500 py-8">No personas yet</div>';
+      return `<div class="space-y-2">${state.personas.map(renderPersonaCard).join('')}</div>`;
+    }
+
+    function renderTraitInput(name, label) {
+      return `
+        <div class="flex items-center gap-2">
+          <label class="flex-1 text-sm text-gray-400">${label}</label>
+          <input type="number" id="trait_${name}" min="0" max="1" step="0.1" value="0.5" class="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm">
+        </div>
+      `;
+    }
+
+    function renderInterests() {
+      const tags = state.interests.map((i, idx) => `
+        <span class="bg-gray-700 px-2 py-1 rounded text-sm flex items-center gap-1">
+          ${escapeHtml(i)}
+          <button onclick="removeInterest(${idx})" class="text-gray-400 hover:text-pink-400">&times;</button>
+        </span>
+      `).join('');
+      return `
+        <div class="flex flex-wrap gap-2 min-h-[32px] p-2 bg-gray-900 border border-gray-700 rounded">${tags || '<span class="text-gray-500 text-sm">No interests</span>'}</div>
+        <div class="flex gap-2 mt-2">
+          <input type="text" id="new-interest" placeholder="Add interest" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm" onkeypress="if(event.key==='Enter'){event.preventDefault();addInterest()}">
+          <button onclick="addInterest()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">Add</button>
+        </div>
+      `;
+    }
+
+    function renderForm() {
+      const isEdit = !!state.editing;
+      return `
+        <div class="space-y-4">
+          <h2 class="text-lg font-semibold ${isEdit ? 'text-pink-400' : 'text-green-400'}">${isEdit ? 'Edit Persona' : 'Create New Persona'}</h2>
+
+          <div><label class="text-sm text-gray-400 block mb-1">Name *</label><input type="text" id="name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2" placeholder="e.g., Einstein"></div>
+          <div><label class="text-sm text-gray-400 block mb-1">Description</label><textarea id="description" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2" placeholder="Brief description..."></textarea></div>
+          <div><label class="text-sm text-gray-400 block mb-1">Speaking Style</label><input type="text" id="speaking_style" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2" placeholder="e.g., Thoughtful, uses analogies"></div>
+          <div><label class="text-sm text-gray-400 block mb-1">System Prompt (optional)</label><textarea id="system_prompt" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2" placeholder="Leave blank to auto-generate..."></textarea></div>
+
+          <div><label class="text-sm text-gray-400 block mb-2">Personality Traits</label>
+            <div class="grid grid-cols-2 gap-2">
+              ${renderTraitInput('curiosity', 'Curiosity')}
+              ${renderTraitInput('assertiveness', 'Assertiveness')}
+              ${renderTraitInput('humor', 'Humor')}
+              ${renderTraitInput('empathy', 'Empathy')}
+              ${renderTraitInput('skepticism', 'Skepticism')}
+              ${renderTraitInput('creativity', 'Creativity')}
+            </div>
+          </div>
+
+          <div><label class="text-sm text-gray-400 block mb-1">Interests</label>${renderInterests()}</div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div><label class="text-sm text-gray-400 block mb-1">Response Tendency</label><input type="range" id="response_tendency" min="0" max="1" step="0.1" value="0.5" class="w-full"></div>
+            <div><label class="text-sm text-gray-400 block mb-1">Temperature</label><input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7" class="w-full"></div>
+          </div>
+
+          <div><label class="text-sm text-gray-400 block mb-1">Model</label>
+            <select id="model" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2">
+              <option value="haiku">Haiku (fast)</option>
+              <option value="sonnet">Sonnet (balanced)</option>
+              <option value="opus">Opus (powerful)</option>
+            </select>
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button onclick="savePersona()" class="flex-1 py-2 ${isEdit ? 'bg-pink-600 hover:bg-pink-500' : 'bg-green-600 hover:bg-green-500'} rounded font-medium">${isEdit ? 'Save Changes' : 'Create Persona'}</button>
+            <button onclick="resetForm()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">Reset</button>
+            ${isEdit ? `<button onclick="deleteEditing()" class="px-4 py-2 bg-red-900 hover:bg-red-800 text-red-300 rounded">Delete</button>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderGenerators() {
+      return `
+        <div class="space-y-6 mb-6">
+          <div class="bg-gray-800 p-4 rounded-lg">
+            <h3 class="text-lg font-semibold text-pink-400 mb-2">Generate Team</h3>
+            <p class="text-sm text-gray-400 mb-3">Generate multiple personas at once</p>
+            <textarea id="team-desc" rows="2" placeholder="e.g., A software startup team..." class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 mb-2"></textarea>
+            <div class="flex gap-2">
+              <input type="number" id="team-count" value="5" min="2" max="15" class="w-20 bg-gray-900 border border-gray-700 rounded px-3 py-2">
+              <button onclick="generateTeam()" id="team-btn" class="flex-1 py-2 bg-pink-600 hover:bg-pink-500 rounded">Generate Team</button>
+            </div>
+            <div id="team-status" class="text-sm mt-2"></div>
+          </div>
+
+          <div class="bg-gray-800 p-4 rounded-lg">
+            <h3 class="text-lg font-semibold text-green-400 mb-2">Generate Single Persona</h3>
+            <textarea id="gen-prompt" rows="2" placeholder="e.g., A cynical detective who speaks in noir style..." class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 mb-2"></textarea>
+            <button onclick="generateSingle()" id="gen-btn" class="w-full py-2 bg-green-600 hover:bg-green-500 rounded">Generate Persona</button>
+            <div id="gen-status" class="text-sm mt-2"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function render() {
+      document.getElementById('app').innerHTML = `
+        ${renderHeader()}
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <h2 class="text-lg font-semibold">Personas (${state.personas.length})</h2>
+              <div class="flex gap-2">
+                <button onclick="selectAll()" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">Select All</button>
+                <button onclick="deselectAll()" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">Deselect</button>
+                <button onclick="deleteSelected()" class="px-2 py-1 text-xs bg-red-900 hover:bg-red-800 text-red-300 rounded">Delete Selected</button>
+              </div>
+            </div>
+            ${renderPersonaList()}
+          </div>
+          <div>
+            ${renderGenerators()}
+            <div class="bg-gray-800 p-4 rounded-lg">${renderForm()}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    subscribe(render);
+
+    // ============================================================================
+    // EVENT HANDLERS
+    // ============================================================================
+    window.toggleSelect = (id) => {
+      const s = new Set(state.selected);
+      s.has(id) ? s.delete(id) : s.add(id);
+      update({ selected: s });
+    };
+
+    window.selectAll = () => update({ selected: new Set(state.personas.map(p => p._filename)) });
+    window.deselectAll = () => update({ selected: new Set() });
+
+    window.editPersona = async (id) => {
+      try {
+        const p = await api.getPersona(id);
+        update({ editing: id });
+        setTimeout(() => setFormData(p), 0);
+      } catch (e) { alert('Failed to load: ' + e.message); }
+    };
+
+    window.resetForm = () => {
+      update({ editing: null, interests: [] });
+      setTimeout(() => {
+        document.getElementById('name').value = '';
+        document.getElementById('description').value = '';
+        document.getElementById('speaking_style').value = '';
+        document.getElementById('system_prompt').value = '';
+        ['curiosity', 'assertiveness', 'humor', 'empathy', 'skepticism', 'creativity'].forEach(t => {
+          document.getElementById('trait_' + t).value = 0.5;
+        });
+        document.getElementById('response_tendency').value = 0.5;
+        document.getElementById('temperature').value = 0.7;
+        document.getElementById('model').value = 'haiku';
+      }, 0);
+    };
+
+    window.addInterest = () => {
+      const input = document.getElementById('new-interest');
+      const v = input?.value.trim();
+      if (v && !state.interests.includes(v)) {
+        update({ interests: [...state.interests, v] });
+        input.value = '';
+      }
+    };
+
+    window.removeInterest = (i) => {
+      const arr = [...state.interests];
+      arr.splice(i, 1);
+      update({ interests: arr });
+    };
+
+    window.savePersona = async () => {
+      const data = getFormData();
+      if (!data.name) { alert('Name is required'); return; }
+      try {
+        if (state.editing) {
+          await api.updatePersona(state.editing, data);
+        } else {
+          await api.createPersona(data);
+        }
+        await loadPersonas();
+        resetForm();
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    window.deleteEditing = async () => {
+      if (!state.editing || !confirm('Delete this persona?')) return;
+      try {
+        await api.deletePersona(state.editing);
+        await loadPersonas();
+        resetForm();
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    window.quickDelete = async (id, name) => {
+      if (!confirm(`Delete "${name}"?`)) return;
+      try {
+        await api.deletePersona(id);
+        await loadPersonas();
+        if (state.editing === id) resetForm();
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    window.deleteSelected = async () => {
+      if (!state.selected.size) { alert('No personas selected'); return; }
+      if (!confirm(`Delete ${state.selected.size} persona(s)?`)) return;
+      try {
+        await api.bulkDelete(Array.from(state.selected));
+        await loadPersonas();
+        update({ selected: new Set() });
+        if (state.selected.has(state.editing)) resetForm();
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    window.generateTeam = async () => {
+      const desc = document.getElementById('team-desc')?.value.trim();
+      const count = parseInt(document.getElementById('team-count')?.value || '5');
+      const status = document.getElementById('team-status');
+      const btn = document.getElementById('team-btn');
+      if (!desc) { status.innerHTML = '<span class="text-red-400">Enter a description</span>'; return; }
+      btn.disabled = true; btn.textContent = 'Generating...';
+      status.innerHTML = '<span class="text-gray-400">Creating team...</span>';
+      try {
+        const result = await api.generateTeam(desc, count);
+        status.innerHTML = `<span class="text-green-400">Created ${result.count} personas!</span>`;
+        document.getElementById('team-desc').value = '';
+        await loadPersonas();
+      } catch (e) { status.innerHTML = `<span class="text-red-400">${e.message}</span>`; }
+      finally { btn.disabled = false; btn.textContent = 'Generate Team'; }
+    };
+
+    window.generateSingle = async () => {
+      const prompt = document.getElementById('gen-prompt')?.value.trim();
+      const status = document.getElementById('gen-status');
+      const btn = document.getElementById('gen-btn');
+      if (!prompt) { status.innerHTML = '<span class="text-red-400">Enter a description</span>'; return; }
+      btn.disabled = true; btn.textContent = 'Generating...';
+      status.innerHTML = '<span class="text-gray-400">Creating persona...</span>';
+      try {
+        const persona = await api.generate(prompt);
+        await api.createPersona(persona);
+        status.innerHTML = `<span class="text-green-400">Created "${persona.name}"!</span>`;
+        document.getElementById('gen-prompt').value = '';
+        await loadPersonas();
+      } catch (e) { status.innerHTML = `<span class="text-red-400">${e.message}</span>`; }
+      finally { btn.disabled = false; btn.textContent = 'Generate Persona'; }
+    };
+
+    // ============================================================================
+    // INIT
+    // ============================================================================
+    async function loadPersonas() {
+      try {
+        const [personas, agents] = await Promise.all([api.getPersonas(), api.getAgents()]);
+        update({ personas, activeAgents: agents, loading: false });
+      } catch (e) { console.error(e); update({ loading: false }); }
+    }
+
+    loadPersonas();
+  </script>
+</body>
+</html>

@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Arena</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+    .message-content pre { background: #1f2937; padding: 0.75rem; border-radius: 0.375rem; overflow-x: auto; margin: 0.5rem 0; }
+    .message-content code { font-family: ui-monospace, monospace; font-size: 0.875rem; }
+    .message-content p { margin: 0.25rem 0; }
+    .message-content ul, .message-content ol { margin-left: 1.5rem; }
+    .message-content h1, .message-content h2, .message-content h3 { margin-top: 0.5rem; margin-bottom: 0.25rem; font-weight: 600; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .typing-dot { animation: pulse 1.5s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    .thinking-dot { animation: pulse 1s infinite; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; border: 2px solid #4b5563; border-top-color: #60a5fa; border-radius: 50%; width: 1rem; height: 1rem; }
+
+    .file-preview img { max-width: 60px; max-height: 60px; object-fit: cover; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen flex flex-col overflow-hidden">
+  <div id="app" class="flex-1 flex flex-col overflow-hidden"></div>
+
+  <!-- Modals -->
+  <div id="modal-overlay" class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50"></div>
+
+  <script type="module">
+    // ============================================================================
+    // STATE
+    // ============================================================================
+    const state = {
+      room: new URLSearchParams(window.location.search).get('room') || 'general',
+      rooms: [],
+      messages: [],
+      agents: [],
+      typing: new Set(),
+      status: { running: false, mode: 'hybrid', max_turns: 20, current_round: 0 },
+      topic: '',
+      senderName: localStorage.getItem('senderName') || 'Human',
+      connected: false,
+      loading: true,
+      project: null,
+      artifacts: [],
+      pendingFiles: []
+    };
+
+    const listeners = new Set();
+    function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+    function update(changes) { Object.assign(state, changes); listeners.forEach(fn => fn(state)); }
+
+    // ============================================================================
+    // API CLIENT
+    // ============================================================================
+    const api = {
+      async getStatus() { return (await fetch('/api/status')).json(); },
+      async getMessages(room, limit = 100) { return (await fetch(`/api/messages?room=${encodeURIComponent(room)}&limit=${limit}`)).json(); },
+      async getAgents() { return (await fetch('/api/agents')).json(); },
+      async getRooms() { const d = await (await fetch('/api/rooms')).json(); return d.rooms?.map(r => ({ name: r.name || r.id, count: r.message_count || 0 })) || []; },
+      async getTopic(room) { const d = await (await fetch(`/api/topic?room=${encodeURIComponent(room)}`)).json(); return d.topic || ''; },
+      async setTopic(room, topic) { await fetch('/api/topic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, topic }) }); },
+      async sendMessage(room, content, senderName, files = []) {
+        const form = new FormData();
+        form.append('room', room);
+        form.append('content', content);
+        form.append('sender', senderName);
+        files.forEach(f => form.append('files', f));
+        return fetch('/send', { method: 'POST', body: form });
+      },
+      async setMode(mode) { return (await fetch('/api/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) })).json(); },
+      async start(mode, maxTurns) { const form = new FormData(); form.append('mode', mode); form.append('max_turns', maxTurns.toString()); return fetch('/start', { method: 'POST', body: form }); },
+      async stop() { return fetch('/stop', { method: 'POST' }); },
+      async deleteMessage(id) { return fetch(`/api/messages/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+      async clearMessages() { return fetch('/api/messages', { method: 'DELETE' }); },
+      async stepAgent(agentId, room) { return fetch(`/agents/${encodeURIComponent(agentId)}/step`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room }) }); },
+      async addAgent(configPath) { const form = new FormData(); form.append('config_path', configPath); return fetch('/agents/add', { method: 'POST', body: form }); },
+      async removeAgent(agentId) { return fetch(`/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' }); },
+      async getProjects() { return (await fetch('/api/projects')).json(); },
+      async createProject(name, goal, roomId) { return fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, goal, roomId }) }); },
+      async addTask(projectId, title, description) { return fetch(`/api/projects/${projectId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, description }) }); },
+      async assignTask(projectId, taskId, agentId, agentName) { return fetch(`/api/projects/${projectId}/tasks/${taskId}/assign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId, agentName }) }); },
+      async advancePhase(projectId) { return fetch(`/api/projects/${projectId}/advance`, { method: 'POST' }); },
+      async getArtifacts(room) { return (await fetch(`/api/artifacts?room=${encodeURIComponent(room)}`)).json(); }
+    };
+
+    // ============================================================================
+    // WEBSOCKET
+    // ============================================================================
+    let ws = null;
+    function connectWS() {
+      if (ws?.readyState === WebSocket.OPEN) return;
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+      ws.onopen = () => {
+        update({ connected: true });
+        ws.send(JSON.stringify({ type: 'join_room', roomId: state.room }));
+      };
+
+      ws.onmessage = (e) => {
+        try { handleWSEvent(JSON.parse(e.data)); } catch {}
+      };
+
+      ws.onclose = () => {
+        update({ connected: false });
+        setTimeout(connectWS, 2000);
+      };
+    }
+
+    function handleWSEvent(data) {
+      switch (data.type) {
+        case 'message_added':
+          const msgRoom = data.roomId || data.message?.room_id;
+          if (data.message && msgRoom === state.room && !state.messages.some(m => m.id === data.message.id)) {
+            update({ messages: [...state.messages, data.message] });
+            scrollToBottom();
+          }
+          break;
+        case 'agent_typing':
+          const typing = new Set(state.typing);
+          data.isTyping ? typing.add(data.agentName) : typing.delete(data.agentName);
+          update({ typing });
+          break;
+        case 'status_update':
+          update({ status: { ...state.status, ...data } });
+          break;
+        case 'message_deleted':
+          update({ messages: state.messages.filter(m => m.id !== data.messageId) });
+          break;
+        case 'agent_joined':
+        case 'agent_left':
+        case 'agents_updated':
+          api.getAgents().then(agents => update({ agents }));
+          break;
+        case 'room_topic_updated':
+          if (data.roomId === state.room) update({ topic: data.topic || '' });
+          break;
+        case 'tool_use':
+        case 'tool_result':
+        case 'system_notification':
+          // These are rendered inline with messages
+          if (!state.messages.some(m => m.id === data.id)) {
+            const fakeMsg = { id: data.id || `${data.type}_${Date.now()}`, type: data.type, ...data, room_id: state.room, timestamp: Date.now() };
+            update({ messages: [...state.messages, fakeMsg] });
+            scrollToBottom();
+          }
+          break;
+      }
+    }
+
+    function joinRoom(roomId) {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'leave_room', roomId: state.room }));
+        ws.send(JSON.stringify({ type: 'join_room', roomId }));
+      }
+    }
+
+    // ============================================================================
+    // HELPERS
+    // ============================================================================
+    function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+    function renderMarkdown(text) { try { return marked.parse(text || ''); } catch { return escapeHtml(text || ''); } }
+    function formatTime(ts) { if (!ts) return ''; return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    function getColor(name) {
+      const colors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-pink-600', 'bg-yellow-600', 'bg-red-600', 'bg-indigo-600', 'bg-teal-600', 'bg-orange-600', 'bg-cyan-600'];
+      let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+      return colors[Math.abs(h) % colors.length];
+    }
+    function scrollToBottom() { requestAnimationFrame(() => { const el = document.getElementById('messageList'); if (el) el.scrollTop = el.scrollHeight; }); }
+
+    // ============================================================================
+    // RENDER
+    // ============================================================================
+    function renderHeader() {
+      const modeOpts = ['hybrid', 'turn_based', 'async'].map(m => `<option value="${m}" ${state.status.mode === m ? 'selected' : ''}>${m.replace('_', ' ')}</option>`).join('');
+      return `
+        <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center gap-4 flex-shrink-0">
+          <h1 class="text-lg font-bold text-blue-400">Agent Arena</h1>
+          <a href="/personas" class="text-sm text-gray-400 hover:text-gray-200">Personas</a>
+          <div class="flex-1"></div>
+          <span class="flex items-center gap-1 text-xs ${state.connected ? 'text-green-400' : 'text-red-400'}">
+            <span class="w-2 h-2 rounded-full ${state.connected ? 'bg-green-400' : 'bg-red-400'}"></span>
+            ${state.connected ? 'Connected' : 'Disconnected'}
+          </span>
+          <select onchange="setMode(this.value)" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">${modeOpts}</select>
+          <input type="number" id="maxTurns" value="${state.status.max_turns}" min="1" max="100" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-14">
+          ${state.status.running
+            ? `<button onclick="stopArena()" class="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-sm">Stop</button>`
+            : `<button onclick="startArena()" class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm">Start</button>`}
+          <span class="text-sm text-gray-400">${state.status.running ? `Round ${state.status.current_round}` : 'Stopped'}</span>
+        </header>
+      `;
+    }
+
+    function renderSidebar() {
+      const roomsHtml = state.rooms.map(r => `
+        <button onclick="switchRoom('${escapeHtml(r.name)}')" class="w-full text-left px-2 py-1 rounded text-sm flex justify-between ${r.name === state.room ? 'bg-blue-600' : 'hover:bg-gray-700'}">
+          <span># ${escapeHtml(r.name)}</span>
+          <span class="text-gray-400 text-xs">${r.count}</span>
+        </button>
+      `).join('') || '<p class="text-gray-500 text-xs px-2">No rooms</p>';
+
+      const agentsHtml = state.agents.map(a => `
+        <div class="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-700 group text-sm">
+          <span class="w-2 h-2 rounded-full ${a.status === 'thinking' ? 'bg-yellow-400 thinking-dot' : a.status === 'speaking' ? 'bg-red-400' : 'bg-green-400'}"></span>
+          <span class="flex-1 truncate">${escapeHtml(a.name)}</span>
+          <button onclick="stepAgent('${escapeHtml(a.id)}')" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-xs bg-blue-600 hover:bg-blue-500 rounded">Step</button>
+          <button onclick="removeAgent('${escapeHtml(a.id)}')" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 text-xs">×</button>
+        </div>
+      `).join('') || '<p class="text-gray-500 text-xs px-2">No agents</p>';
+
+      const projectHtml = state.project ? `
+        <div class="text-sm">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium">${escapeHtml(state.project.name)}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded ${state.project.phase === 'building' ? 'bg-green-900 text-green-300' : state.project.phase === 'planning' ? 'bg-blue-900 text-blue-300' : 'bg-gray-700'}">${state.project.phase}</span>
+          </div>
+          <p class="text-gray-400 text-xs mb-2">${escapeHtml(state.project.goal || '')}</p>
+          ${state.project.tasks?.length ? `<ul class="space-y-1 max-h-20 overflow-y-auto">${state.project.tasks.map(t => `
+            <li class="flex items-center gap-1 text-xs">
+              <span class="w-1.5 h-1.5 rounded-full ${t.status === 'done' ? 'bg-green-400' : t.status === 'in_progress' ? 'bg-yellow-400' : 'bg-gray-500'}"></span>
+              <span class="flex-1 truncate">${escapeHtml(t.title)}</span>
+              ${t.assignee ? `<span class="text-blue-400">${escapeHtml(t.assignee)}</span>` : `<button onclick="showAssignModal('${t.id}','${escapeHtml(t.title)}')" class="text-gray-500 hover:text-gray-300">assign</button>`}
+            </li>
+          `).join('')}</ul>` : '<p class="text-gray-500 text-xs">No tasks</p>'}
+          <div class="flex gap-1 mt-2">
+            <button onclick="showAddTaskModal()" class="flex-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">+ Task</button>
+            <button onclick="advancePhase()" class="flex-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded">Advance</button>
+          </div>
+        </div>
+      ` : `<button onclick="showCreateProjectModal()" class="w-full px-2 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded">+ New Project</button>`;
+
+      const artifactsHtml = state.artifacts.length ? state.artifacts.slice(0, 5).map(a => `
+        <div class="text-xs text-gray-400 truncate cursor-pointer hover:text-gray-200" onclick="viewArtifact('${escapeHtml(a.path)}')">${escapeHtml(a.path.split('/').pop())}</div>
+      `).join('') : '<p class="text-gray-500 text-xs">No files</p>';
+
+      return `
+        <aside class="w-56 bg-gray-800 border-r border-gray-700 flex flex-col flex-shrink-0 overflow-hidden">
+          <div class="p-2 border-b border-gray-700">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase mb-1">Rooms</h2>
+            <div class="space-y-0.5 max-h-24 overflow-y-auto">${roomsHtml}</div>
+            <div class="mt-1 flex gap-1">
+              <input type="text" id="newRoomInput" placeholder="room name" class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs" onkeypress="if(event.key==='Enter')goToRoom()">
+              <button onclick="goToRoom()" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">Go</button>
+            </div>
+          </div>
+          <div class="p-2 border-b border-gray-700">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase mb-1">Agents (${state.agents.length})</h2>
+            <div class="space-y-0.5 max-h-32 overflow-y-auto">${agentsHtml}</div>
+            <div class="mt-1 flex gap-1">
+              <input type="text" id="addAgentInput" placeholder="config path" class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs" onkeypress="if(event.key==='Enter')addAgent()">
+              <button onclick="addAgent()" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded">+</button>
+            </div>
+          </div>
+          <div class="p-2 border-b border-gray-700">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase mb-1">Project</h2>
+            ${projectHtml}
+          </div>
+          <div class="p-2 border-b border-gray-700">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase mb-1">Files</h2>
+            <div class="max-h-20 overflow-y-auto">${artifactsHtml}</div>
+          </div>
+          <div class="p-2">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase mb-1">Status</h2>
+            <div class="text-xs text-gray-400 space-y-0.5">
+              <p>Running: <span class="${state.status.running ? 'text-green-400' : 'text-gray-500'}">${state.status.running}</span></p>
+              <p>Mode: ${state.status.mode}</p>
+              <p>Round: ${state.status.current_round}</p>
+            </div>
+          </div>
+        </aside>
+      `;
+    }
+
+    function renderMessage(msg) {
+      // Tool use message
+      if (msg.type === 'tool_use') {
+        return `<div class="px-4 py-1 text-sm border-l-2 border-orange-500 bg-gray-800/50 ml-12">
+          <span class="text-orange-400">Tool</span> <strong class="text-green-400">${escapeHtml(msg.agent_name || '')}</strong>
+          <span class="text-gray-400"> using </span><code class="bg-gray-700 px-1 rounded text-blue-300">${escapeHtml(msg.tool_name || '')}</code>
+        </div>`;
+      }
+      // Tool result message
+      if (msg.type === 'tool_result') {
+        const color = msg.is_error ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400';
+        return `<div class="px-4 py-1 text-xs border-l-2 ${color} bg-gray-800/50 ml-16">
+          ${msg.is_error ? 'Error' : 'Done'}: <code class="text-gray-400">${escapeHtml(msg.tool_name || '')}</code>
+        </div>`;
+      }
+      // System notification
+      if (msg.type === 'system_notification') {
+        const colors = { info: 'border-blue-500 text-blue-400', warning: 'border-yellow-500 text-yellow-400', error: 'border-red-500 text-red-400' };
+        const c = colors[msg.level] || colors.info;
+        return `<div class="px-4 py-2 text-sm border-l-2 ${c} bg-gray-800/50">${escapeHtml(msg.message || '')}</div>`;
+      }
+      // Join/leave/system messages
+      if (['join', 'leave', 'system'].includes(msg.type)) {
+        const icons = { join: '+', leave: '-', system: '*' };
+        const colors = { join: 'text-green-400 border-green-600', leave: 'text-red-400 border-red-600', system: 'text-yellow-400 border-yellow-600' };
+        return `<div class="text-center py-1"><span class="inline-flex items-center gap-1 px-3 py-0.5 text-xs rounded-full border ${colors[msg.type]} bg-gray-800/50">
+          <span class="font-bold">${icons[msg.type]}</span> ${escapeHtml(msg.content || '')}
+        </span></div>`;
+      }
+
+      // Regular chat message
+      const senderName = msg.sender_name || msg.senderName || 'Unknown';
+      const isHuman = senderName === 'Human' || senderName === state.senderName;
+
+      return `
+        <div class="flex gap-3 px-4 py-2 hover:bg-gray-800/30 group ${isHuman ? 'bg-green-900/10' : ''}" data-id="${msg.id}">
+          <div class="w-9 h-9 rounded-full ${isHuman ? 'bg-green-600' : getColor(senderName)} flex items-center justify-center text-sm font-bold flex-shrink-0">
+            ${escapeHtml(senderName.charAt(0).toUpperCase())}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="font-semibold text-sm ${isHuman ? 'text-green-400' : 'text-blue-400'}">${escapeHtml(senderName)}</span>
+              <span class="text-xs text-gray-500">${formatTime(msg.timestamp)}</span>
+              <button onclick="deleteMessage('${msg.id}')" class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-sm ml-auto">×</button>
+            </div>
+            <div class="message-content text-gray-300 text-sm">${renderMarkdown(msg.content)}</div>
+            ${msg.attachments?.length ? `<div class="flex flex-wrap gap-2 mt-2">${msg.attachments.map(a =>
+              a.mimetype?.startsWith('image/') ? `<a href="${a.url}" target="_blank"><img src="${a.url}" class="max-w-[200px] max-h-[150px] rounded border border-gray-700"></a>` :
+              `<a href="${a.url}" class="text-xs bg-gray-700 px-2 py-1 rounded hover:bg-gray-600">${escapeHtml(a.filename)}</a>`
+            ).join('')}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMessages() {
+      if (state.loading) return `<div class="flex-1 flex items-center justify-center"><div class="spinner"></div></div>`;
+      if (!state.messages.length) return `<div class="flex-1 flex items-center justify-center text-gray-500">No messages yet</div>`;
+      return `<div id="messageList" class="flex-1 overflow-y-auto">${state.messages.map(renderMessage).join('')}</div>`;
+    }
+
+    function renderTypingIndicator() {
+      if (!state.typing.size) return '';
+      const names = Array.from(state.typing).join(', ');
+      return `<div class="px-4 py-1 text-sm text-gray-400 flex items-center gap-2">
+        <span class="flex gap-0.5"><span class="typing-dot w-1 h-1 bg-gray-400 rounded-full"></span><span class="typing-dot w-1 h-1 bg-gray-400 rounded-full"></span><span class="typing-dot w-1 h-1 bg-gray-400 rounded-full"></span></span>
+        ${escapeHtml(names)} ${state.typing.size === 1 ? 'is' : 'are'} thinking...
+      </div>`;
+    }
+
+    function renderFilePreview() {
+      if (!state.pendingFiles.length) return '';
+      return `<div class="flex gap-2 px-4 py-2 bg-gray-800 border-t border-gray-700">${state.pendingFiles.map((f, i) => `
+        <div class="flex items-center gap-1 bg-gray-700 px-2 py-1 rounded text-xs">
+          ${f.type.startsWith('image/') ? `<img src="${URL.createObjectURL(f)}" class="w-8 h-8 object-cover rounded">` : ''}
+          <span class="max-w-[100px] truncate">${escapeHtml(f.name)}</span>
+          <button onclick="removeFile(${i})" class="text-red-400 hover:text-red-300">×</button>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    function renderInput() {
+      return `
+        ${renderFilePreview()}
+        <div class="border-t border-gray-700 p-3 bg-gray-800">
+          <div class="flex gap-2 mb-2">
+            <input type="text" id="senderInput" value="${escapeHtml(state.senderName)}" placeholder="Name" onchange="updateSenderName(this.value)" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-24">
+            <button onclick="clearAllMessages()" class="px-2 py-1 text-xs bg-red-900 hover:bg-red-800 rounded text-red-300">Clear All</button>
+          </div>
+          <div class="flex gap-2">
+            <label class="cursor-pointer px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Attach files">
+              <span>📎</span>
+              <input type="file" id="fileInput" multiple accept="image/*,.pdf,.txt,.md" class="hidden" onchange="handleFiles(this.files)">
+            </label>
+            <textarea id="messageInput" placeholder="Type a message..." onkeydown="handleInputKey(event)" class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm resize-none" rows="1"></textarea>
+            <button onclick="sendMessage()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded font-medium">Send</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMain() {
+      return `
+        <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <div class="bg-gray-750 border-b border-gray-700 px-4 py-2 flex items-center gap-2 flex-shrink-0">
+            <span class="text-blue-400 font-medium">#${escapeHtml(state.room)}</span>
+            <span class="text-gray-600">|</span>
+            <input type="text" id="topicInput" value="${escapeHtml(state.topic)}" placeholder="Set topic..." onblur="updateTopic(this.value)" onkeypress="if(event.key==='Enter')this.blur()" class="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 focus:outline-none">
+          </div>
+          ${renderMessages()}
+          ${renderTypingIndicator()}
+          ${renderInput()}
+        </main>
+      `;
+    }
+
+    function render() {
+      document.getElementById('app').innerHTML = `${renderHeader()}<div class="flex-1 flex overflow-hidden">${renderSidebar()}${renderMain()}</div>`;
+    }
+
+    subscribe(render);
+
+    // ============================================================================
+    // EVENT HANDLERS
+    // ============================================================================
+    window.switchRoom = async (roomId) => {
+      if (roomId === state.room) return;
+      update({ loading: true, messages: [], room: roomId });
+      joinRoom(roomId);
+      const url = new URL(location); url.searchParams.set('room', roomId); history.pushState({}, '', url);
+      const [messages, topic, artifacts] = await Promise.all([api.getMessages(roomId), api.getTopic(roomId), api.getArtifacts(roomId).catch(() => [])]);
+      update({ messages, topic, artifacts, loading: false });
+      scrollToBottom();
+    };
+
+    window.goToRoom = () => {
+      const input = document.getElementById('newRoomInput');
+      const name = input?.value.trim().toLowerCase().replace(/\s+/g, '-');
+      if (name) switchRoom(name);
+    };
+
+    window.setMode = async (mode) => { await api.setMode(mode); update({ status: { ...state.status, mode } }); };
+    window.startArena = async () => { const mt = parseInt(document.getElementById('maxTurns')?.value || '20'); await api.start(state.status.mode, mt); update({ status: { ...state.status, running: true } }); };
+    window.stopArena = async () => { await api.stop(); update({ status: { ...state.status, running: false } }); };
+    window.updateTopic = async (t) => { if (t !== state.topic) { await api.setTopic(state.room, t); update({ topic: t }); } };
+    window.updateSenderName = (n) => { localStorage.setItem('senderName', n); update({ senderName: n }); };
+
+    window.stepAgent = async (id) => { try { await api.stepAgent(id, state.room); } catch (e) { alert('Step failed: ' + e.message); } };
+    window.addAgent = async () => {
+      const input = document.getElementById('addAgentInput');
+      const path = input?.value.trim();
+      if (path) { await api.addAgent(path); input.value = ''; api.getAgents().then(agents => update({ agents })); }
+    };
+    window.removeAgent = async (id) => { if (confirm('Remove this agent?')) { await api.removeAgent(id); api.getAgents().then(agents => update({ agents })); } };
+
+    window.deleteMessage = async (id) => { await api.deleteMessage(id); update({ messages: state.messages.filter(m => m.id !== id) }); };
+    window.clearAllMessages = async () => { if (confirm('Clear all messages?')) { await api.clearMessages(); update({ messages: [] }); } };
+
+    window.handleFiles = (files) => { update({ pendingFiles: [...state.pendingFiles, ...Array.from(files)] }); };
+    window.removeFile = (i) => { const f = [...state.pendingFiles]; f.splice(i, 1); update({ pendingFiles: f }); };
+
+    window.handleInputKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+    window.sendMessage = async () => {
+      const input = document.getElementById('messageInput');
+      const content = input?.value?.trim();
+      if (!content && !state.pendingFiles.length) return;
+      try {
+        input.value = '';
+        await api.sendMessage(state.room, content || '', state.senderName, state.pendingFiles);
+        update({ pendingFiles: [] });
+      } catch (e) { input.value = content; }
+    };
+
+    // Project modals
+    window.showCreateProjectModal = () => {
+      const overlay = document.getElementById('modal-overlay');
+      overlay.innerHTML = `<div class="bg-gray-800 rounded-lg p-4 w-80">
+        <h3 class="text-lg font-bold mb-3">New Project</h3>
+        <input type="text" id="projectNameInput" placeholder="Project name" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-2">
+        <textarea id="projectGoalInput" placeholder="Goal" rows="2" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-3"></textarea>
+        <div class="flex gap-2"><button onclick="createProject()" class="flex-1 bg-blue-600 hover:bg-blue-500 rounded py-2">Create</button><button onclick="hideModal()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded py-2">Cancel</button></div>
+      </div>`;
+      overlay.classList.remove('hidden'); overlay.classList.add('flex');
+    };
+
+    window.createProject = async () => {
+      const name = document.getElementById('projectNameInput')?.value.trim();
+      const goal = document.getElementById('projectGoalInput')?.value.trim();
+      if (name && goal) { await api.createProject(name, goal, state.room); hideModal(); loadProject(); }
+    };
+
+    window.showAddTaskModal = () => {
+      const overlay = document.getElementById('modal-overlay');
+      overlay.innerHTML = `<div class="bg-gray-800 rounded-lg p-4 w-80">
+        <h3 class="text-lg font-bold mb-3">Add Task</h3>
+        <input type="text" id="taskTitleInput" placeholder="Title" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-2">
+        <textarea id="taskDescInput" placeholder="Description" rows="2" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-3"></textarea>
+        <div class="flex gap-2"><button onclick="addTask()" class="flex-1 bg-blue-600 hover:bg-blue-500 rounded py-2">Add</button><button onclick="hideModal()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded py-2">Cancel</button></div>
+      </div>`;
+      overlay.classList.remove('hidden'); overlay.classList.add('flex');
+    };
+
+    window.addTask = async () => {
+      const title = document.getElementById('taskTitleInput')?.value.trim();
+      const desc = document.getElementById('taskDescInput')?.value.trim();
+      if (title && state.project?.id) { await api.addTask(state.project.id, title, desc || ''); hideModal(); loadProject(); }
+    };
+
+    window.showAssignModal = (taskId, taskTitle) => {
+      const opts = state.agents.map(a => `<option value="${a.id}" data-name="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join('');
+      const overlay = document.getElementById('modal-overlay');
+      overlay.innerHTML = `<div class="bg-gray-800 rounded-lg p-4 w-80">
+        <h3 class="text-lg font-bold mb-3">Assign Task</h3>
+        <p class="text-gray-400 text-sm mb-3">${escapeHtml(taskTitle)}</p>
+        <select id="agentSelect" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-3">${opts}</select>
+        <input type="hidden" id="assignTaskId" value="${taskId}">
+        <div class="flex gap-2"><button onclick="assignTask()" class="flex-1 bg-blue-600 hover:bg-blue-500 rounded py-2">Assign</button><button onclick="hideModal()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded py-2">Cancel</button></div>
+      </div>`;
+      overlay.classList.remove('hidden'); overlay.classList.add('flex');
+    };
+
+    window.assignTask = async () => {
+      const taskId = document.getElementById('assignTaskId')?.value;
+      const select = document.getElementById('agentSelect');
+      const agentId = select?.value;
+      const agentName = select?.options[select.selectedIndex]?.getAttribute('data-name');
+      if (taskId && agentId && state.project?.id) { await api.assignTask(state.project.id, taskId, agentId, agentName); hideModal(); loadProject(); }
+    };
+
+    window.advancePhase = async () => { if (state.project?.id) { await api.advancePhase(state.project.id); loadProject(); } };
+
+    window.hideModal = () => { const o = document.getElementById('modal-overlay'); o.classList.add('hidden'); o.classList.remove('flex'); };
+
+    window.viewArtifact = (path) => alert('Artifact: ' + path); // TODO: implement full viewer
+
+    async function loadProject() {
+      try {
+        const data = await api.getProjects();
+        if (data.projects?.length) {
+          const pid = data.projects[data.projects.length - 1];
+          const res = await fetch(`/api/projects/${pid}`);
+          if (res.ok) update({ project: await res.json() });
+        }
+      } catch {}
+    }
+
+    // Drag and drop
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer?.files.length) handleFiles(e.dataTransfer.files); });
+
+    // ESC to close modals
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideModal(); });
+
+    // ============================================================================
+    // INIT
+    // ============================================================================
+    async function init() {
+      try {
+        const [status, rooms, agents, messages, topic, artifacts] = await Promise.all([
+          api.getStatus(), api.getRooms(), api.getAgents(), api.getMessages(state.room), api.getTopic(state.room), api.getArtifacts(state.room).catch(() => [])
+        ]);
+        update({ status, rooms: rooms.length ? rooms : [{ name: 'general', count: 0 }], agents, messages, topic, artifacts, loading: false });
+        connectWS();
+        scrollToBottom();
+        loadProject();
+      } catch (e) { console.error('Init failed:', e); update({ loading: false }); }
+    }
+
+    init();
+  </script>
+</body>
+</html>

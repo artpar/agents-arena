@@ -27,7 +27,6 @@
 import express, { Request, Response } from 'express';
 import { createServer as createHttpServer, Server } from 'http';
 import { WebSocketServer } from 'ws';
-import nunjucks from 'nunjucks';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { existsSync, mkdirSync } from 'fs';
@@ -71,7 +70,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths
-const TEMPLATES_DIR = join(__dirname, '..', 'templates');
 const UPLOADS_DIR = join(__dirname, '..', 'uploads');
 const PUBLIC_DIR = join(__dirname, '..', 'public');
 
@@ -144,17 +142,6 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   const server = createHttpServer(app);
   const wss = new WebSocketServer({ server });
 
-  // Configure Nunjucks
-  const nunjucksEnv = nunjucks.configure(TEMPLATES_DIR, {
-    autoescape: true,
-    express: app,
-    watch: false
-  });
-
-  nunjucksEnv.addFilter('slice', (str: string | undefined, start: number, end?: number) => {
-    return typeof str === 'string' ? str.slice(start, end) : '';
-  });
-
   // Middleware
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -186,73 +173,9 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
   // HTML ROUTES
   // ============================================================================
 
+  // Serve new vanilla JS SPA
   app.get('/', (req: Request, res: Response) => {
-    const status = getStatus(runtime);
-    res.render('index.html', {
-      status,
-      agents: getAgents(runtime),
-      current_room: 'general'
-    });
-  });
-
-  // New vanilla JS SPA
-  app.get('/app', (req: Request, res: Response) => {
-    res.sendFile(join(PUBLIC_DIR, 'app.html'));
-  });
-
-  app.get('/messages', (req: Request, res: Response) => {
-    const roomId = (req.query.room as string) || 'general';
-    const messages = getMessagesByRoom(runtime, roomId, 50);
-    res.render('partials/messages.html', { messages });
-  });
-
-  app.get('/agents-list', (req: Request, res: Response) => {
-    res.render('partials/agents.html', {
-      agents: getAgents(runtime)
-    });
-  });
-
-  app.get('/status-panel', (req: Request, res: Response) => {
-    res.render('partials/status.html', {
-      status: getStatus(runtime)
-    });
-  });
-
-  app.get('/topic-panel', (req: Request, res: Response) => {
-    const roomId = (req.query.room as string) || 'general';
-    // Get or create the room
-    let room = getRoom(roomId);
-    if (!room) {
-      room = createRoom(roomId, roomId, `${roomId} discussion room`, '');
-    }
-    res.render('partials/topic.html', {
-      topic: room?.topic || '',
-      channel_name: roomId
-    });
-  });
-
-  app.get('/project-panel', (req: Request, res: Response) => {
-    // Get first active project for current room
-    const projectStmt = runtime.database.db.prepare(`
-      SELECT id, name, goal, room_id, phase FROM projects
-      WHERE phase != 'done' ORDER BY updated_at DESC LIMIT 1
-    `);
-    const projectRow = projectStmt.get() as { id: string; name: string; goal: string; room_id: string; phase: string } | undefined;
-
-    let project = null;
-    if (projectRow) {
-      const taskStmt = runtime.database.db.prepare(`
-        SELECT id, title, status, assignee_name as assigneeName FROM tasks WHERE project_id = ?
-      `);
-      const tasks = taskStmt.all(projectRow.id);
-      project = { ...projectRow, tasks };
-    }
-
-    res.render('partials/project.html', {
-      project,
-      agents: getAgents(runtime),
-      status: getStatus(runtime)
-    });
+    res.sendFile(join(PUBLIC_DIR, 'index.html'));
   });
 
   // ============================================================================
@@ -307,24 +230,10 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       maxTurns
     });
 
-    const status = { running: true, mode, max_turns: maxTurns, current_round: 0 };
-    // Render controls and status panel with OOB swap
-    const controlsHtml = await new Promise<string>((resolve, reject) => {
-      req.app.render('partials/controls.html', { status }, (err, html) => {
-        if (err) reject(err);
-        else resolve(html);
-      });
-    });
-    const statusHtml = await new Promise<string>((resolve, reject) => {
-      req.app.render('partials/status.html', { status }, (err, html) => {
-        if (err) reject(err);
-        else resolve(html);
-      });
-    });
-    res.send(`${controlsHtml}<div id="status-panel" hx-swap-oob="innerHTML">${statusHtml}</div>`);
+    res.json({ running: true, mode, max_turns: maxTurns, current_round: 0 });
   });
 
-  app.post('/stop', async (req: Request, res: Response) => {
+  app.post('/stop', (req: Request, res: Response) => {
     // Send stop command to director
     runtime.actors.send(directorAddress(), {
       type: 'STOP'
@@ -332,21 +241,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
 
     // Get current status to preserve mode
     const currentStatus = getStatus(runtime);
-    const status = { running: false, mode: currentStatus.mode || 'hybrid', max_turns: currentStatus.max_turns || 20, current_round: 0 };
-    // Render controls and status panel with OOB swap
-    const controlsHtml = await new Promise<string>((resolve, reject) => {
-      req.app.render('partials/controls.html', { status }, (err, html) => {
-        if (err) reject(err);
-        else resolve(html);
-      });
-    });
-    const statusHtml = await new Promise<string>((resolve, reject) => {
-      req.app.render('partials/status.html', { status }, (err, html) => {
-        if (err) reject(err);
-        else resolve(html);
-      });
-    });
-    res.send(`${controlsHtml}<div id="status-panel" hx-swap-oob="innerHTML">${statusHtml}</div>`);
+    res.json({ running: false, mode: currentStatus.mode || 'hybrid', max_turns: currentStatus.max_turns || 20, current_round: 0 });
   });
 
   // ============================================================================
@@ -427,9 +322,7 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
       }
     });
 
-    res.render('partials/agents.html', {
-      agents: getAgents(runtime)
-    });
+    res.json({ success: true, agents: getAgents(runtime) });
   });
 
   app.delete('/agents/:agentId', async (req: Request, res: Response) => {
@@ -606,23 +499,10 @@ Stay in character as ${dbAgent.name}. Never say you are Claude or an AI assistan
     res.json({ status: 'stepped', agentId, roomId });
   });
 
-  // Room switching
-  app.get('/r/:roomName', async (req: Request, res: Response) => {
+  // Room switching - redirect to new SPA with room param
+  app.get('/r/:roomName', (req: Request, res: Response) => {
     const roomName = req.params.roomName.toLowerCase().replace(/ /g, '-');
-    const roomId = roomName as RoomId;
-
-    // Send room creation/join to director
-    runtime.actors.send(directorAddress(), {
-      type: 'JOIN_ROOM',
-      roomId,
-      roomName
-    });
-
-    res.render('index.html', {
-      status: getStatus(runtime),
-      agents: getAgents(runtime),
-      current_room: roomName
-    });
+    res.redirect(`/?room=${encodeURIComponent(roomName)}`);
   });
 
   app.get('/api/rooms', (req: Request, res: Response) => {
@@ -849,11 +729,7 @@ Stay in character as ${dbAgent.name}. Never say you are Claude or an AI assistan
 
   // Personas page
   app.get('/personas', (req: Request, res: Response) => {
-    const personas = getDbAgents().map(formatPersona);
-    res.render('personas.html', {
-      personas,
-      active_agents: getAgents(runtime)
-    });
+    res.sendFile(join(PUBLIC_DIR, 'personas.html'));
   });
 
   // List all personas
