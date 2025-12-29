@@ -433,6 +433,59 @@ export async function createServer(config: ServerConfig): Promise<ServerInstance
     const roomId = (req.body.roomId || 'general') as RoomId;
     console.log('[INFO] Step requested', { agentId, roomId });
 
+    // Check if agent actor exists - if not, spawn it
+    const agentAddr = agentAddress(agentId);
+    let actor = runtime.actors.getActor(agentAddr);
+
+    if (!actor) {
+      // Check if agent exists in database
+      const dbAgent = getDbAgent(agentId);
+      if (!dbAgent) {
+        console.error('[ERROR] Agent not found in database', { agentId });
+        res.status(404).json({ error: 'Agent not found', agentId });
+        return;
+      }
+
+      // Spawn the agent actor
+      console.log('[INFO] Spawning missing agent actor', { agentId, name: dbAgent.name });
+      const config = JSON.parse(dbAgent.config_json || '{}');
+      const agentConfig = createAgentConfig({
+        id: agentId,
+        name: dbAgent.name,
+        description: config.description || '',
+        systemPrompt: config.systemPrompt || config.system_prompt || '',
+        model: config.model || 'haiku',
+        temperature: config.temperature || 0.7,
+        tools: config.tools || [],
+        personalityTraits: config.personalityTraits || config.personality_traits || {},
+        speakingStyle: config.speakingStyle || config.speaking_style || '',
+        interests: config.interests || [],
+        responseTendency: config.responseTendency || config.response_tendency || 0.5
+      });
+
+      // Send spawn message to director and wait for it to be processed
+      runtime.actors.send(directorAddress(), {
+        type: 'SPAWN_AGENT',
+        config: agentConfig
+      });
+
+      // Wait for actor to be spawned (poll with timeout)
+      const maxWait = 5000;
+      const pollInterval = 100;
+      const startTime = Date.now();
+      while (Date.now() - startTime < maxWait) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        actor = runtime.actors.getActor(agentAddr);
+        if (actor) break;
+      }
+
+      if (!actor) {
+        console.error('[ERROR] Failed to spawn agent actor', { agentId });
+        res.status(500).json({ error: 'Failed to spawn agent', agentId });
+        return;
+      }
+    }
+
     // Get room info for context
     const roomStmt = runtime.database.db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?');
     const room = roomStmt.get(roomId, roomId) as { topic?: string } | undefined;
