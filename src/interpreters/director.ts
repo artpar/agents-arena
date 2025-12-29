@@ -791,12 +791,34 @@ function handleInjectMessage(
   const { message } = msg;
   const roomId = message.roomId || state.currentRoom || ('general' as RoomId);
 
-  // Route message to room for processing using userMessage constructor
-  const effects: Effect[] = [
-    sendToRoom(roomId, userMessageMsg(message, message.mentions || []))
-  ];
+  const effects: Effect[] = [];
+  let newState = state;
 
-  return [state, Object.freeze(effects)];
+  // Auto-create room if it doesn't exist
+  if (!state.rooms[roomId]) {
+    const roomConfig = createRoomConfig({
+      id: roomId,
+      name: roomId,
+      description: `Room ${roomId}`,
+      topic: ''
+    });
+
+    newState = Object.freeze({
+      ...state,
+      rooms: Object.freeze({
+        ...state.rooms,
+        [roomId]: roomConfig
+      })
+    });
+
+    effects.push(spawnRoomActor(roomConfig));
+    effects.push(dbSaveRoom(roomConfig));
+  }
+
+  // Route message to room for processing
+  effects.push(sendToRoom(roomId, userMessageMsg(message, message.mentions || [])));
+
+  return [newState, Object.freeze(effects)];
 }
 
 function handleStart(
