@@ -55,7 +55,8 @@
       loading: true,
       project: null,
       artifacts: [],
-      pendingFiles: []
+      pendingFiles: [],
+      steppingAgentId: null
     };
 
     const listeners = new Set();
@@ -213,17 +214,23 @@
         </button>
       `).join('') || '<p class="text-gray-500 text-xs px-2">No rooms</p>';
 
-      const agentsHtml = state.agents.map(a => `
-        <div class="px-2 py-1.5 rounded hover:bg-gray-700 group text-sm">
+      const agentsHtml = state.agents.map(a => {
+        const isStepping = state.steppingAgentId === a.id;
+        const isThinking = a.status === 'thinking' || isStepping;
+        const statusColor = isThinking ? 'bg-yellow-400 animate-pulse' : a.status === 'speaking' ? 'bg-red-400' : 'bg-green-400';
+        const statusLabel = isThinking ? 'thinking...' : a.status === 'speaking' ? 'speaking' : '';
+        return `
+        <div class="px-2 py-1.5 rounded hover:bg-gray-700 group text-sm ${isThinking ? 'bg-yellow-900/20' : ''}">
           <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full flex-shrink-0 ${a.status === 'thinking' ? 'bg-yellow-400 thinking-dot' : a.status === 'speaking' ? 'bg-red-400' : 'bg-green-400'}"></span>
+            <span class="w-2 h-2 rounded-full flex-shrink-0 ${statusColor}"></span>
             <span class="flex-1 truncate font-medium">${escapeHtml(a.name)}</span>
-            <button onclick="stepAgent('${escapeHtml(a.id)}')" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-xs bg-blue-600 hover:bg-blue-500 rounded">Step</button>
+            ${statusLabel ? `<span class="text-xs text-yellow-400">${statusLabel}</span>` : ''}
+            <button onclick="stepAgent('${escapeHtml(a.id)}')" ${isStepping ? 'disabled' : ''} class="${isStepping ? 'opacity-50' : 'opacity-0 group-hover:opacity-100'} px-1.5 py-0.5 text-xs bg-blue-600 hover:bg-blue-500 rounded disabled:cursor-not-allowed">${isStepping ? '...' : 'Step'}</button>
             <button onclick="removeAgent('${escapeHtml(a.id)}')" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 text-xs">×</button>
           </div>
           ${a.description ? `<p class="text-xs text-gray-400 mt-0.5 ml-4 line-clamp-2" title="${escapeHtml(a.description)}">${escapeHtml(a.description)}</p>` : ''}
         </div>
-      `).join('') || '<p class="text-gray-500 text-xs px-2">No agents</p>';
+      `;}).join('') || '<p class="text-gray-500 text-xs px-2">No agents</p>';
 
       const projectHtml = state.project ? `
         <div class="text-sm">
@@ -497,7 +504,19 @@
     window.updateTopic = async (t) => { if (t !== state.topic) { await api.setTopic(state.room, t); update({ topic: t }); } };
     window.updateSenderName = (n) => { localStorage.setItem('senderName', n); update({ senderName: n }); };
 
-    window.stepAgent = async (id) => { try { await api.stepAgent(id, state.room); } catch (e) { alert('Step failed: ' + e.message); } };
+    window.stepAgent = async (id) => {
+      try {
+        // Mark agent as stepping immediately for visual feedback
+        update({ steppingAgentId: id });
+        await api.stepAgent(id, state.room);
+        // Refresh agents after step completes
+        const agents = await api.getAgents();
+        update({ agents, steppingAgentId: null });
+      } catch (e) {
+        update({ steppingAgentId: null });
+        alert('Step failed: ' + e.message);
+      }
+    };
     window.addAgent = async () => {
       const input = document.getElementById('addAgentInput');
       const path = input?.value.trim();
