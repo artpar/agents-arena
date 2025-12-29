@@ -398,7 +398,7 @@
             <input type="text" id="topicInput" value="${escapeHtml(state.topic)}" placeholder="Set topic..." onblur="updateTopic(this.value)" onkeypress="if(event.key==='Enter')this.blur()" class="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 focus:outline-none">
           </div>
           ${renderMessages()}
-          ${renderTypingIndicator()}
+          <div id="typing-indicator">${renderTypingIndicator()}</div>
           ${renderInput()}
         </main>
       `;
@@ -408,7 +408,66 @@
       document.getElementById('app').innerHTML = `${renderHeader()}<div class="flex-1 flex overflow-hidden">${renderSidebar()}${renderMain()}</div>`;
     }
 
-    subscribe(render);
+    // Selective update - don't re-render input area to preserve focus and typed content
+    function selectiveUpdate() {
+      // Preserve input values before update
+      const messageInput = document.getElementById('messageInput');
+      const messageValue = messageInput?.value || '';
+      const hadFocus = document.activeElement === messageInput;
+      const selectionStart = messageInput?.selectionStart;
+      const selectionEnd = messageInput?.selectionEnd;
+
+      // Update header
+      const header = document.querySelector('header');
+      if (header) header.outerHTML = renderHeader();
+
+      // Update sidebar
+      const aside = document.querySelector('aside');
+      if (aside) aside.outerHTML = renderSidebar();
+
+      // Update room name in main header
+      const roomNameSpan = document.querySelector('main .text-blue-400');
+      if (roomNameSpan) roomNameSpan.textContent = '#' + state.room;
+
+      // Update topic input
+      const topicInput = document.getElementById('topicInput');
+      if (topicInput && document.activeElement !== topicInput) {
+        topicInput.value = state.topic || '';
+      }
+
+      // Update messages area
+      const messageList = document.getElementById('messageList');
+      if (messageList) {
+        if (state.messages.length) {
+          messageList.innerHTML = state.messages.map(renderMessage).join('');
+        } else {
+          messageList.innerHTML = '';
+        }
+        scrollToBottom();
+      } else if (!state.loading) {
+        // If messageList doesn't exist and not loading, do a full re-render of main
+        const main = document.querySelector('main');
+        if (main) main.outerHTML = renderMain();
+      }
+
+      // Update typing indicator
+      const typingContainer = document.getElementById('typing-indicator');
+      if (typingContainer) typingContainer.innerHTML = renderTypingIndicator();
+
+      // Restore input value and focus
+      const newMessageInput = document.getElementById('messageInput');
+      if (newMessageInput && messageValue) {
+        newMessageInput.value = messageValue;
+        if (hadFocus) {
+          newMessageInput.focus();
+          if (selectionStart !== undefined) {
+            newMessageInput.setSelectionRange(selectionStart, selectionEnd);
+          }
+        }
+      }
+    }
+
+    subscribe(selectiveUpdate);
 
     // ============================================================================
     // EVENT HANDLERS
@@ -545,6 +604,8 @@
     // INIT
     // ============================================================================
     async function init() {
+      // Do initial full render first
+      render();
       try {
         const [status, rooms, agents, messages, topic, artifacts] = await Promise.all([
           api.getStatus(), api.getRooms(), api.getAgents(), api.getMessages(state.room), api.getTopic(state.room), api.getArtifacts(state.room).catch(() => [])
