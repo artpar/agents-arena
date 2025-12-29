@@ -120,7 +120,7 @@
       async sendMessage(room, content, senderName) {
         const form = new FormData();
         form.append('room', room);
-        form.append('message', content);
+        form.append('content', content);
         form.append('sender', senderName);
         return fetch('/send', { method: 'POST', body: form });
       },
@@ -202,7 +202,9 @@
     function handleWSEvent(data) {
       switch (data.type) {
         case 'message_added':
-          if (data.message && data.message.room === state.room) {
+          // roomId is at top level of event, message has room_id
+          const msgRoom = data.roomId || data.message?.room_id || data.message?.room;
+          if (data.message && msgRoom === state.room) {
             // Check if message already exists to avoid duplicates
             const exists = state.messages.some(m => m.id === data.message.id);
             if (!exists) {
@@ -411,17 +413,19 @@
     }
 
     function renderMessage(msg) {
-      const isHuman = msg.senderName === 'Human' || msg.senderName === state.senderName;
-      const colorClass = isHuman ? 'bg-gray-700' : getAgentColor(msg.senderName);
+      // Handle both snake_case (API) and camelCase (WebSocket) field names
+      const senderName = msg.sender_name || msg.senderName || 'Unknown';
+      const isHuman = senderName === 'Human' || senderName === state.senderName;
+      const colorClass = isHuman ? 'bg-gray-700' : getAgentColor(senderName);
 
       return `
         <div class="flex gap-3 px-4 py-3 hover:bg-gray-800/50 ${isHuman ? '' : ''}">
           <div class="w-10 h-10 rounded-full ${colorClass} flex items-center justify-center text-sm font-bold flex-shrink-0">
-            ${escapeHtml(msg.senderName.charAt(0).toUpperCase())}
+            ${escapeHtml(senderName.charAt(0).toUpperCase())}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline gap-2 mb-1">
-              <span class="font-semibold ${isHuman ? 'text-gray-200' : 'text-blue-400'}">${escapeHtml(msg.senderName)}</span>
+              <span class="font-semibold ${isHuman ? 'text-gray-200' : 'text-blue-400'}">${escapeHtml(senderName)}</span>
               <span class="text-xs text-gray-500">${formatTime(msg.timestamp)}</span>
             </div>
             <div class="message-content text-gray-300 prose prose-invert prose-sm max-w-none">
