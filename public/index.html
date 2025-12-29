@@ -435,8 +435,10 @@
         topicInput.value = state.topic || '';
       }
 
-      // Update messages area
+      // Update messages area - but don't re-render main if topic input is focused
       const messageList = document.getElementById('messageList');
+      const topicFocused = document.activeElement === topicInput;
+
       if (messageList) {
         if (state.messages.length) {
           messageList.innerHTML = state.messages.map(renderMessage).join('');
@@ -444,8 +446,9 @@
           messageList.innerHTML = '';
         }
         scrollToBottom();
-      } else if (!state.loading) {
+      } else if (!state.loading && !topicFocused) {
         // If messageList doesn't exist and not loading, do a full re-render of main
+        // But skip if topic input is focused to avoid losing user input
         const main = document.querySelector('main');
         if (main) main.outerHTML = renderMain();
       }
