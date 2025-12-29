@@ -226,27 +226,33 @@ test.describe('Agent Arena UI', () => {
 
   test.describe('Delete Messages', () => {
     test('should delete individual message on hover', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForTimeout(1000);
+      // Use general room which has messages
+      await page.goto('/?room=general');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      // Send a message first
+      // Send a test message with unique ID
+      const testId = Date.now();
       const messageInput = page.locator('#messageInput');
-      await messageInput.fill('Message to delete ' + Date.now());
+      await messageInput.fill('Delete me ' + testId);
       await page.getByRole('button', { name: 'Send' }).click();
-      await page.waitForTimeout(1000);
 
+      // Wait for the specific message to appear via WebSocket
+      await expect(page.locator('#messageList')).toContainText('Delete me ' + testId, { timeout: 10000 });
+
+      // Get count after our message appeared
       const initialCount = await page.locator('#messageList > div').count();
+      expect(initialCount).toBeGreaterThan(0);
 
-      // Hover on first message and click delete
-      const firstMessage = page.locator('#messageList > div').first();
-      await firstMessage.hover();
-      const deleteBtn = firstMessage.locator('button:has-text("×")');
-      if (await deleteBtn.isVisible()) {
-        await deleteBtn.click();
-        await page.waitForTimeout(500);
-        const newCount = await page.locator('#messageList > div').count();
-        expect(newCount).toBeLessThan(initialCount);
-      }
+      // Find the message we just sent and delete it
+      const ourMessage = page.locator('#messageList > div', { hasText: 'Delete me ' + testId });
+      await ourMessage.hover();
+      const deleteBtn = ourMessage.locator('button:has-text("×")');
+      await deleteBtn.click({ force: true });
+
+      // Wait for deletion to propagate
+      await page.waitForTimeout(500);
+      const newCount = await page.locator('#messageList > div').count();
+      expect(newCount).toBeLessThan(initialCount);
     });
 
     test('should clear all messages', async ({ page }) => {
