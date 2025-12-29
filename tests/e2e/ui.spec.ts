@@ -54,22 +54,24 @@ test.describe('Agent Arena UI', () => {
       await expect(messageInput).toHaveValue('', { timeout: 5000 });
     });
 
-    // Skipped: Flaky due to test database isolation - the /send endpoint stores messages
-    // via the actor system which may not complete before the page reload. The actual
-    // functionality works correctly in production (verified via manual testing).
-    test.skip('should display messages in the list', async ({ page }) => {
+    test('should display sent message in the list', async ({ page }) => {
       await page.goto('/?room=general');
-      await expect(page.getByText('Connected')).toBeVisible({ timeout: 5000 });
+      // Wait for WebSocket connection
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(1000);
 
       const messageInput = page.locator('#messageInput');
-      const testMessage = 'Display test ' + Date.now();
+      const testMessage = 'Live test ' + Date.now();
+
+      // Type and send message
       await messageInput.fill(testMessage);
       await page.getByRole('button', { name: 'Send' }).click();
+
+      // Input should clear
       await expect(messageInput).toHaveValue('', { timeout: 5000 });
 
-      await page.goto('/?room=general');
-      await page.waitForTimeout(2000);
-      await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 15000 });
+      // Message should appear via WebSocket broadcast (no reload needed)
+      await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 10000 });
     });
 
     test('should show sender name', async ({ page }) => {
