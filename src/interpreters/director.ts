@@ -40,7 +40,7 @@ import {
 import { RoomConfig, createRoomConfig, createGeneralRoom } from '../values/room.js';
 import { AgentConfig, createAgentConfig } from '../values/agent.js';
 import { ProjectId, RoomId, AgentId, generateProjectId } from '../values/ids.js';
-import { agentJoinedMsg, agentLeftMsg, userMessage as userMessageMsg } from './room.js';
+import { agentJoinedMsg, agentLeftMsg, userMessage as userMessageMsg, setScheduleMode } from './room.js';
 import { joinRoom, leaveRoom } from './agent.js';
 import { startProject, addTask, assignTaskMsg, workOnTask } from './project.js';
 import {
@@ -871,7 +871,13 @@ function handleSetMode(
     mode: msg.mode
   });
 
-  return stateOnly(newState);
+  // Propagate mode change to all rooms
+  const roomIds = Object.keys(state.rooms) as RoomId[];
+  const effects: Effect[] = roomIds.map(roomId =>
+    sendToRoom(roomId, setScheduleMode(msg.mode))
+  );
+
+  return [newState, Object.freeze(effects)];
 }
 
 function handleJoinRoom(

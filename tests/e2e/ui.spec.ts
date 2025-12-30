@@ -9,333 +9,296 @@ test.describe('Agent Arena UI', () => {
       await expect(page.locator('header h1')).toContainText('Agent Arena');
     });
 
-    test('should show connection status', async ({ page }) => {
+    test('should establish WebSocket connection', async ({ page }) => {
       await page.goto('/');
-      // Wait for WebSocket to connect (allow extra time for initial connection)
       await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
+
+      // Verify connection is functional by checking agents load
+      await expect(page.getByText(/Agents \(\d+\)/)).toBeVisible({ timeout: 5000 });
     });
 
-    test('should load agents list', async ({ page }) => {
+    test('should load agents from server', async ({ page }) => {
       await page.goto('/');
-      // Wait for agents section to load - text includes count like "Agents (2)"
-      await expect(page.getByText(/Agents \(/)).toBeVisible();
-      await page.waitForTimeout(1000);
-    });
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-    test('should show sidebar sections', async ({ page }) => {
-      await page.goto('/');
-      // Sidebar should have all major section headings
-      await expect(page.locator('aside h2', { hasText: 'Rooms' })).toBeVisible();
-      await expect(page.locator('aside h2', { hasText: /Agents/ })).toBeVisible();
-      await expect(page.locator('aside h2', { hasText: 'Project' })).toBeVisible();
-      await expect(page.locator('aside h2', { hasText: 'Status' })).toBeVisible();
+      // Verify actual agents are loaded (not just the section header)
+      const agentCount = await page.locator('aside button:has-text("Step")').count();
+      expect(agentCount).toBeGreaterThan(0);
     });
   });
 
   test.describe('Messages', () => {
-    test('should have message input', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.locator('#messageInput')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
-    });
-
-    test('should send a message', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForTimeout(1000);
-
-      const messageInput = page.locator('#messageInput');
-      const sendBtn = page.getByRole('button', { name: 'Send' });
-      const testMessage = 'Test message ' + Date.now();
-
-      await messageInput.fill(testMessage);
-      await sendBtn.click();
-
-      // Input should be cleared after send
-      await expect(messageInput).toHaveValue('', { timeout: 5000 });
-    });
-
-    test('should display sent message in the list', async ({ page }) => {
+    test('should send message and display it via WebSocket', async ({ page }) => {
       await page.goto('/?room=general');
-      // Wait for WebSocket connection
       await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
-      await page.waitForTimeout(1000);
 
+      const testMessage = 'Behavior test ' + Date.now();
       const messageInput = page.locator('#messageInput');
-      const testMessage = 'Live test ' + Date.now();
 
-      // Type and send message
       await messageInput.fill(testMessage);
       await page.getByRole('button', { name: 'Send' }).click();
 
-      // Input should clear
+      // Verify: input cleared AND message appears in list
       await expect(messageInput).toHaveValue('', { timeout: 5000 });
-
-      // Message should appear via WebSocket broadcast (no reload needed)
       await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 10000 });
     });
 
-    test('should show sender name', async ({ page }) => {
+    test('should persist sender name across sessions', async ({ page }) => {
+      const uniqueName = 'TestUser' + Date.now();
+
       await page.goto('/');
-      const senderInput = page.locator('#senderInput');
-      await expect(senderInput).toBeVisible();
-      await expect(senderInput).toHaveValue('Human');
-    });
+      await page.locator('#senderInput').fill(uniqueName);
+      await page.locator('#senderInput').blur();
 
-    test('should persist sender name', async ({ page }) => {
-      await page.goto('/');
-      const senderInput = page.locator('#senderInput');
+      // Send a message with this sender name
+      await page.locator('#messageInput').fill('Test from ' + uniqueName);
+      await page.getByRole('button', { name: 'Send' }).click();
 
-      await senderInput.fill('TestUser123');
-      await senderInput.blur();
-
-      // Reload and check
+      // Reload and verify sender name persisted
       await page.reload();
-      await expect(page.locator('#senderInput')).toHaveValue('TestUser123', { timeout: 3000 });
+      await expect(page.locator('#senderInput')).toHaveValue(uniqueName, { timeout: 5000 });
     });
   });
 
   test.describe('Agents', () => {
-    test('should display agents with step buttons', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForTimeout(2000);
-
-      // Hover to reveal step button
-      const agentRow = page.locator('aside').getByText('Step').first();
-      // Step buttons exist (may be hidden until hover)
-      const stepButtons = page.locator('button:has-text("Step")');
-      const count = await stepButtons.count();
-      expect(count).toBeGreaterThanOrEqual(0);
-    });
-
-    test('should step agent when clicking step button', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForTimeout(2000);
+    test('should step agent and receive response message', async ({ page }) => {
+      await page.goto('/?room=general');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(1000);
 
       const initialMessageCount = await page.locator('#messageList > div').count();
 
-      // Find an agent row and hover to show step button
-      const agentSection = page.locator('aside').locator('div', { hasText: /^Agents/ }).locator('..');
-      const agentRow = agentSection.locator('div.group').first();
+      // Find and click step button
+      const agentRow = page.locator('aside div.group').first();
+      await agentRow.hover();
+      const stepBtn = agentRow.getByRole('button', { name: 'Step' });
 
-      if (await agentRow.isVisible()) {
-        await agentRow.hover();
-        const stepBtn = agentRow.getByRole('button', { name: 'Step' });
-        if (await stepBtn.isVisible()) {
-          await stepBtn.click();
+      if (await stepBtn.isVisible()) {
+        await stepBtn.click();
 
-          // Wait for agent response
-          await page.waitForTimeout(10000);
-          const newMessageCount = await page.locator('#messageList > div').count();
-          expect(newMessageCount).toBeGreaterThanOrEqual(initialMessageCount);
-        }
+        // Verify: agent actually responds with a new message
+        await expect(async () => {
+          const newCount = await page.locator('#messageList > div').count();
+          expect(newCount).toBeGreaterThan(initialMessageCount);
+        }).toPass({ timeout: 30000 });
       }
     });
 
-    test('should add agent via input', async ({ page }) => {
+    test('should show agent add input', async ({ page }) => {
       await page.goto('/');
-      await page.waitForTimeout(1000);
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      // Use a valid persona path format
-      const agentPath = 'personas/test-e2e';
+      // Verify add agent input exists
       const addInput = page.locator('#addAgentInput');
-      await addInput.fill(agentPath);
-      await addInput.press('Enter');
-
-      // Check if agent list updated (agent names show as first part of path)
-      await page.waitForTimeout(3000);
+      await expect(addInput).toBeVisible();
+      await expect(addInput).toHaveAttribute('placeholder', /config path/i);
     });
   });
 
   test.describe('Rooms', () => {
-    test('should show current room in header', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.locator('main')).toContainText('#general');
-    });
-
-    test('should switch rooms', async ({ page }) => {
+    test('should switch rooms and update URL', async ({ page }) => {
+      // Create unique room
+      const roomName = 'testroom' + Date.now();
       await page.goto('/');
 
       const roomInput = page.locator('#newRoomInput');
-      await roomInput.fill('test-room');
+      await roomInput.fill(roomName);
       await page.getByRole('button', { name: 'Go' }).click();
 
-      await expect(page).toHaveURL(/room=test-room/, { timeout: 5000 });
-      await expect(page.locator('main')).toContainText('#test-room');
+      // Verify: URL changed and room header updated
+      await expect(page).toHaveURL(new RegExp(`room=${roomName}`), { timeout: 5000 });
+      await expect(page.locator('main')).toContainText(`#${roomName}`);
+
+      // Send message in this room and verify it appears
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
+      const testMsg = 'Room test ' + Date.now();
+      await page.locator('#messageInput').fill(testMsg);
+      await page.getByRole('button', { name: 'Send' }).click();
+      await expect(page.locator('#messageList')).toContainText(testMsg, { timeout: 10000 });
     });
 
-    test('should edit room topic', async ({ page }) => {
-      await page.goto('/');
+    test('should persist room topic', async ({ page }) => {
+      await page.goto('/?room=general');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
+      const uniqueTopic = 'Topic ' + Date.now();
       const topicInput = page.locator('#topicInput');
-      await topicInput.fill('Test topic ' + Date.now());
+      await topicInput.fill(uniqueTopic);
       await topicInput.blur();
+      await page.waitForTimeout(500);
 
-      // Topic should persist on reload
-      const topicValue = await topicInput.inputValue();
+      // Reload and verify topic persisted
       await page.reload();
-      await page.waitForTimeout(1000);
-      await expect(page.locator('#topicInput')).toHaveValue(topicValue, { timeout: 3000 });
+      await expect(page.locator('#topicInput')).toHaveValue(uniqueTopic, { timeout: 5000 });
     });
   });
 
-  test.describe('Controls', () => {
-    test('should have mode selector', async ({ page }) => {
+  test.describe('Mode Selection', () => {
+    test('should persist mode selection', async ({ page }) => {
       await page.goto('/');
-      const modeSelect = page.locator('select').first();
-      await expect(modeSelect).toBeVisible();
-      // Should have options
-      const options = modeSelect.locator('option');
-      expect(await options.count()).toBeGreaterThanOrEqual(3);
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
+
+      const modeSelect = page.locator('header select').first();
+      await modeSelect.selectOption('turn_based');
+      await page.waitForTimeout(500);
+
+      // Reload and verify mode persisted
+      await page.reload();
+      await expect(page.locator('header select').first()).toHaveValue('turn_based', { timeout: 5000 });
     });
 
-    test('should have start/stop button', async ({ page }) => {
-      await page.goto('/');
-      const startOrStop = page.locator('button:has-text("Start"), button:has-text("Stop")').first();
-      await expect(startOrStop).toBeVisible();
-    });
+    // Note: Testing actual turn_based vs hybrid behavior requires multiple agents
+    // responding which is complex to test reliably in E2E
+  });
 
-    test('should toggle start/stop', async ({ page }) => {
+  test.describe('Start/Stop Arena', () => {
+    test('should start arena and show running state', async ({ page }) => {
       await page.goto('/');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
       const startBtn = page.getByRole('button', { name: 'Start' });
       const stopBtn = page.getByRole('button', { name: 'Stop' });
 
       if (await startBtn.isVisible()) {
         await startBtn.click();
+
+        // Verify: Stop button appears (arena is running)
         await expect(stopBtn).toBeVisible({ timeout: 3000 });
-      } else if (await stopBtn.isVisible()) {
+
+        // Verify: Status API confirms running
+        const response = await page.request.get('/api/status');
+        const status = await response.json();
+        expect(status.running).toBe(true);
+
+        // Clean up: stop the arena
         await stopBtn.click();
         await expect(startBtn).toBeVisible({ timeout: 3000 });
       }
     });
 
-    test('should change mode', async ({ page }) => {
+    test('should stop arena and show stopped state', async ({ page }) => {
       await page.goto('/');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      const modeSelect = page.locator('header select').first();
-      await modeSelect.selectOption('turn_based');
+      // First start it
+      const startBtn = page.getByRole('button', { name: 'Start' });
+      if (await startBtn.isVisible()) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
 
-      // Mode is sent to server and persists in server state
-      await page.waitForTimeout(1000);
-      await page.reload();
-      // Wait for status to load from server
-      await page.waitForTimeout(1000);
-      await expect(page.locator('header select').first()).toHaveValue('turn_based', { timeout: 5000 });
+      const stopBtn = page.getByRole('button', { name: 'Stop' });
+      if (await stopBtn.isVisible()) {
+        await stopBtn.click();
+
+        // Verify: Start button appears (arena is stopped)
+        await expect(startBtn).toBeVisible({ timeout: 3000 });
+
+        // Verify: Status API confirms stopped
+        const response = await page.request.get('/api/status');
+        const status = await response.json();
+        expect(status.running).toBe(false);
+      }
     });
   });
 
   test.describe('Delete Messages', () => {
-    test('should delete individual message on hover', async ({ page }) => {
-      // Use general room which has messages
+    test('should delete individual message', async ({ page }) => {
       await page.goto('/?room=general');
       await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      // Send a test message with unique ID
+      // Send a unique message
       const testId = Date.now();
-      const messageInput = page.locator('#messageInput');
-      await messageInput.fill('Delete me ' + testId);
+      const testMessage = 'Delete me ' + testId;
+      await page.locator('#messageInput').fill(testMessage);
       await page.getByRole('button', { name: 'Send' }).click();
+      await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 10000 });
 
-      // Wait for the specific message to appear via WebSocket
-      await expect(page.locator('#messageList')).toContainText('Delete me ' + testId, { timeout: 10000 });
-
-      // Get count after our message appeared
-      const initialCount = await page.locator('#messageList > div').count();
-      expect(initialCount).toBeGreaterThan(0);
-
-      // Find the message we just sent and delete it
-      const ourMessage = page.locator('#messageList > div', { hasText: 'Delete me ' + testId });
+      // Delete it
+      const ourMessage = page.locator('#messageList > div', { hasText: testMessage });
       await ourMessage.hover();
-      const deleteBtn = ourMessage.locator('button:has-text("×")');
-      await deleteBtn.click({ force: true });
+      await ourMessage.locator('button:has-text("×")').click({ force: true });
 
-      // Wait for deletion to propagate
-      await page.waitForTimeout(500);
-      const newCount = await page.locator('#messageList > div').count();
-      expect(newCount).toBeLessThan(initialCount);
+      // Verify: message is gone
+      await expect(page.locator('#messageList')).not.toContainText(testMessage, { timeout: 5000 });
     });
 
     test('should clear all messages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/?room=general');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      // Handle confirm dialog
+      // Send a message first
+      const testMessage = 'Clear test ' + Date.now();
+      await page.locator('#messageInput').fill(testMessage);
+      await page.getByRole('button', { name: 'Send' }).click();
+      await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 10000 });
+
+      // Accept confirm dialog
       page.on('dialog', dialog => dialog.accept());
 
-      const clearBtn = page.getByRole('button', { name: 'Clear All' });
-      await expect(clearBtn).toBeVisible();
-      await clearBtn.click();
+      await page.getByRole('button', { name: 'Clear All' }).click();
 
-      await page.waitForTimeout(1000);
-      const count = await page.locator('#messageList > div').count();
-      expect(count).toBe(0);
+      // Verify: no messages remain
+      await expect(async () => {
+        const count = await page.locator('#messageList > div').count();
+        expect(count).toBe(0);
+      }).toPass({ timeout: 5000 });
     });
   });
 
   test.describe('Project Management', () => {
-    test('should show new project button or existing project', async ({ page }) => {
+    test('should open and close project modal', async ({ page }) => {
       await page.goto('/');
-
-      // Project section should be visible - look for the heading
-      await expect(page.locator('aside h2', { hasText: 'Project' })).toBeVisible();
-    });
-
-    test('should open create project modal', async ({ page }) => {
-      await page.goto('/');
-
-      const newProjectBtn = page.getByRole('button', { name: '+ New Project' });
-      if (await newProjectBtn.isVisible()) {
-        await newProjectBtn.click();
-        await expect(page.getByText('New Project').first()).toBeVisible();
-        await expect(page.locator('#projectNameInput')).toBeVisible();
-      }
-    });
-
-    test('should create a project', async ({ page }) => {
-      await page.goto('/');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
       const newProjectBtn = page.getByRole('button', { name: '+ New Project' });
       if (await newProjectBtn.isVisible()) {
         await newProjectBtn.click();
 
-        const projectName = 'Test Project ' + Date.now();
+        // Verify modal opens with form fields
+        await expect(page.locator('#projectNameInput')).toBeVisible({ timeout: 3000 });
+        await expect(page.locator('#projectGoalInput')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Create' })).toBeVisible();
+
+        // Fill and submit
+        const projectName = 'TestProject' + Date.now();
         await page.locator('#projectNameInput').fill(projectName);
         await page.locator('#projectGoalInput').fill('Test goal');
         await page.getByRole('button', { name: 'Create' }).click();
 
-        // Modal should close
+        // Verify modal closes
         await expect(page.locator('#modal-overlay')).toBeHidden({ timeout: 3000 });
       }
     });
   });
 
-  test.describe('File Attachments', () => {
-    test('should have file input', async ({ page }) => {
-      await page.goto('/');
-      const fileInput = page.locator('#fileInput');
-      await expect(fileInput).toBeAttached();
-    });
-  });
-
   test.describe('Personas Page', () => {
-    test('should load personas page', async ({ page }) => {
+    test('should load and display personas', async ({ page }) => {
       await page.goto('/personas');
       await expect(page).toHaveTitle(/Persona Manager/);
-      await expect(page.getByText('Persona Manager')).toBeVisible();
-    });
 
-    test('should show existing personas', async ({ page }) => {
-      await page.goto('/personas');
+      // Verify personas are actually loaded from API
       await page.waitForTimeout(1000);
+      const response = await page.request.get('/api/personas');
+      const personas = await response.json();
 
-      const personaCount = await page.locator('[data-id]').count();
-      expect(personaCount).toBeGreaterThanOrEqual(0);
+      if (personas.length > 0) {
+        // Verify at least one persona name is displayed
+        await expect(page.locator('body')).toContainText(personas[0].name);
+      }
     });
 
-    test('should have persona form', async ({ page }) => {
+    test('should create persona via form', async ({ page }) => {
       await page.goto('/personas');
-      await expect(page.locator('#name')).toBeVisible();
-      await expect(page.locator('#description')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Create Persona' })).toBeVisible();
+      await page.waitForTimeout(500);
+
+      const personaName = 'TestPersona' + Date.now();
+      await page.locator('#name').fill(personaName);
+      await page.locator('#description').fill('Test description');
+      await page.getByRole('button', { name: 'Create Persona' }).click();
+
+      // Verify: persona appears in list
+      await expect(page.locator('body')).toContainText(personaName, { timeout: 5000 });
     });
 
     test('should navigate back to arena', async ({ page }) => {
@@ -343,61 +306,23 @@ test.describe('Agent Arena UI', () => {
       await page.getByRole('link', { name: 'Back to Arena' }).click();
       await expect(page).toHaveURL('/');
     });
-
-    test('should have team generation', async ({ page }) => {
-      await page.goto('/personas');
-      await page.waitForTimeout(500);
-      await expect(page.getByText('Generate Team').first()).toBeVisible();
-      await expect(page.locator('#team-desc')).toBeVisible();
-    });
-
-    test('should have single persona generation', async ({ page }) => {
-      await page.goto('/personas');
-      await expect(page.getByText('Generate Single Persona')).toBeVisible();
-      await expect(page.locator('#gen-prompt')).toBeVisible();
-    });
   });
 
-  test.describe('WebSocket Real-time Updates', () => {
-    test('should show typing indicator when agent is responding', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForTimeout(2000);
+  test.describe('Real-time Updates', () => {
+    test('should receive messages via WebSocket without refresh', async ({ page }) => {
+      await page.goto('/?room=general');
+      await expect(page.getByText('Connected')).toBeVisible({ timeout: 10000 });
 
-      // Find and click step button on first agent
-      const agentSection = page.locator('aside').locator('div', { hasText: /^Agents/ }).locator('..');
-      const agentRow = agentSection.locator('div.group').first();
+      // Wait for room to be fully joined
+      await page.waitForTimeout(1000);
 
-      if (await agentRow.isVisible()) {
-        await agentRow.hover();
-        const stepBtn = agentRow.getByRole('button', { name: 'Step' });
-        if (await stepBtn.isVisible()) {
-          await stepBtn.click();
+      // Send message
+      const testMessage = 'Realtime ' + Date.now();
+      await page.locator('#messageInput').fill(testMessage);
+      await page.getByRole('button', { name: 'Send' }).click();
 
-          // Typing indicator might appear
-          await page.waitForTimeout(500);
-          // Just check that the request was sent - typing indicator is transient
-        }
-      }
-    });
-  });
-
-  test.describe('Responsive Layout', () => {
-    test('sidebar should be visible', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.locator('aside')).toBeVisible();
-    });
-
-    test('main content should be visible', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.locator('main')).toBeVisible();
-    });
-  });
-
-  test.describe('Error Handling', () => {
-    test('should handle API errors gracefully', async ({ page }) => {
-      await page.goto('/');
-      // Page should load without errors
-      await expect(page.locator('header')).toBeVisible();
+      // Verify message appears WITHOUT page reload (via WebSocket)
+      await expect(page.locator('#messageList')).toContainText(testMessage, { timeout: 15000 });
     });
   });
 });

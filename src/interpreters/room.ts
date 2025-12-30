@@ -145,6 +145,14 @@ export interface RequestResponsesMsg {
 }
 
 /**
+ * Set room schedule mode.
+ */
+export interface SetScheduleModeMsg {
+  readonly type: 'SET_SCHEDULE_MODE';
+  readonly mode: 'turn_based' | 'async' | 'hybrid';
+}
+
+/**
  * Union of all room messages.
  */
 export type RoomMessage =
@@ -157,7 +165,8 @@ export type RoomMessage =
   | ResetRoomMsg
   | MessagesLoadedMsg
   | RoomTickMsg
-  | RequestResponsesMsg;
+  | RequestResponsesMsg
+  | SetScheduleModeMsg;
 
 // ============================================================================
 // MESSAGE CONSTRUCTORS
@@ -214,6 +223,10 @@ export function requestResponses(
   responders: readonly AgentId[]
 ): RequestResponsesMsg {
   return Object.freeze({ type: 'REQUEST_RESPONSES', contextMessage, responders });
+}
+
+export function setScheduleMode(mode: 'turn_based' | 'async' | 'hybrid'): SetScheduleModeMsg {
+  return Object.freeze({ type: 'SET_SCHEDULE_MODE', mode });
 }
 
 // ============================================================================
@@ -289,6 +302,9 @@ export const roomInterpreter: Interpreter<RoomState, RoomMessage> = (
 
     case 'REQUEST_RESPONSES':
       return handleRequestResponses(state, message);
+
+    case 'SET_SCHEDULE_MODE':
+      return handleSetScheduleMode(state, message);
 
     default:
       // Exhaustive check
@@ -482,6 +498,24 @@ function handleRoomTick(
   // Periodic tick - could check for timeouts, stale state, etc.
   // For now, just return unchanged state
   return noChange(state);
+}
+
+function handleSetScheduleMode(
+  state: RoomState,
+  msg: SetScheduleModeMsg
+): readonly [RoomState, readonly Effect[]] {
+  // Update the room config with the new schedule mode
+  const newConfig = Object.freeze({
+    ...state.config,
+    scheduleMode: msg.mode
+  });
+
+  const newState: RoomState = Object.freeze({
+    ...state,
+    config: newConfig
+  });
+
+  return [newState, Object.freeze([])];
 }
 
 function handleRequestResponses(
